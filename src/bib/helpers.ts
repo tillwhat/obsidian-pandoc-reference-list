@@ -1,10 +1,13 @@
-import { execa } from 'execa';
-import fs from 'fs';
-import path from 'path';
-import https from 'https';
-import download from 'download';
-import { request } from 'http';
+import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import { CSLList, PartialCSLEntry } from './types';
+
+// Use globalThis.fetch which is available in Electron 13+
+const fetch = globalThis.fetch;
+const execFileAsync = promisify(execFile);
 
 export const DEFAULT_ZOTERO_PORT = '23119';
 
@@ -20,7 +23,9 @@ export function getBibPath(bibPath: string, getVaultRoot?: () => string) {
     if (getVaultRoot) {
       bibPath = path.join(getVaultRoot(), bibPath);
       if (!fs.existsSync(bibPath)) {
-        throw new Error(`bibToCSL: cannot access bibliography file '${bibPath}'.`);
+        throw new Error(
+          `bibToCSL: cannot access bibliography file '${bibPath}'.`
+        );
       }
     } else {
       throw new Error(`bibToCSL: cannot access bibliography file '${orig}'.`);
@@ -61,7 +66,9 @@ export async function bibToCSL(
 
   const args = [bibPath, '-t', 'csljson', '--quiet'];
 
-  const res = await execa(pathToPandoc, args);
+  const res = await execFileAsync(pathToPandoc, args, {
+    maxBuffer: 100 * 1024 * 1024,
+  });
 
   if (res.stderr) {
     throw new Error(`bibToCSL: ${res.stderr}`);
@@ -89,29 +96,19 @@ export async function getCSLLocale(
     return localeData;
   }
 
-  const str = await new Promise<string>((res, rej) => {
-    https.get(url, (result) => {
-      let output = '';
-
-      result.setEncoding('utf8');
-      result.on('data', (chunk) => (output += chunk));
-      result.on('error', (e) => rej(`Downloading locale: ${e}`));
-      result.on('close', () => {
-        rej(new Error('Error: cannot download locale'));
-      });
-      result.on('end', () => {
-        if (/^404: Not Found/.test(output)) {
-          rej(new Error('Error downloading locale: 404: Not Found'));
-        } else {
-          res(output);
-        }
-      });
-    });
-  });
-
-  fs.writeFileSync(outpath, str);
-  localeCache.set(lang, str);
-  return str;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const localeData = await response.text();
+    fs.writeFileSync(outpath, localeData);
+    localeCache.set(lang, localeData);
+    return localeData;
+  } catch (e) {
+    console.error('Error downloading locale:', e);
+    throw e;
+  }
 }
 
 export async function getCSLStyle(
@@ -150,29 +147,19 @@ export async function getCSLStyle(
     return styleData;
   }
 
-  const str = await new Promise<string>((res, rej) => {
-    https.get(url, (result) => {
-      let output = '';
-
-      result.setEncoding('utf8');
-      result.on('data', (chunk) => (output += chunk));
-      result.on('error', (e) => rej(`Error downloading CSL: ${e}`));
-      result.on('close', () => {
-        rej(new Error('Error: cannot download CSL'));
-      });
-      result.on('end', () => {
-        try {
-          res(output);
-        } catch (e) {
-          rej(e);
-        }
-      });
-    });
-  });
-
-  fs.writeFileSync(outpath, str);
-  styleCache.set(url, str);
-  return str;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const styleData = await response.text();
+    fs.writeFileSync(outpath, styleData);
+    styleCache.set(url, styleData);
+    return styleData;
+  } catch (e) {
+    console.error('Error downloading CSL style:', e);
+    throw e;
+  }
 }
 
 export const defaultHeaders = {
@@ -182,56 +169,72 @@ export const defaultHeaders = {
   Connection: 'keep-alive',
 };
 
-function getGlobal() {
-  if (window?.activeWindow) return activeWindow;
-  if (window) return window;
-  return global;
+async function requestZotero(
+  port: string,
+  endpoint: string,
+  options: {
+    method?: string;
+    body?: string;
+    headers?: Record<string, string>;
+  } = {},
+  timeout = 5000
+) {
+  return new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: String(port || DEFAULT_ZOTERO_PORT).trim(),
+        path: endpoint,
+        method: options.method ?? 'GET',
+        headers: {
+          ...defaultHeaders,
+          ...options.headers,
+        },
+      },
+      (response) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => (body += chunk));
+        response.on('end', () =>
+          resolve({ status: response.statusCode ?? 0, body })
+        );
+        response.on('error', reject);
+      }
+    );
+    req.setTimeout(timeout, () => {
+      req.destroy(new Error('Zotero request timed out.'));
+    });
+    req.on('error', reject);
+    if (options.body) req.write(options.body);
+    req.end();
+  });
 }
 
 export async function getZUserGroups(
   port: string = DEFAULT_ZOTERO_PORT
 ): Promise<Array<{ id: number; name: string }>> {
-  if (!(await isZoteroRunning(port))) return null;
+  const body = JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'user.groups',
+  });
 
-  return new Promise((res, rej) => {
-    const body = JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'user.groups',
+  try {
+    const response = await requestZotero(port, '/better-bibtex/json-rpc', {
+      method: 'POST',
+      headers: { 'Content-Length': Buffer.byteLength(body).toString() },
+      body,
     });
 
-    const postRequest = request(
-      {
-        host: '127.0.0.1',
-        port: port,
-        path: '/better-bibtex/json-rpc',
-        method: 'POST',
-        headers: {
-          ...defaultHeaders,
-          'Content-Length': Buffer.byteLength(body),
-        },
-      },
-      (result) => {
-        let output = '';
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`HTTP ${response.status}`);
+    }
 
-        result.setEncoding('utf8');
-        result.on('data', (chunk) => (output += chunk));
-        result.on('error', (e) => rej(`Error connecting to Zotero: ${e}`));
-        result.on('close', () => {
-          rej(new Error('Error: cannot connect to Zotero'));
-        });
-        result.on('end', () => {
-          try {
-            res(JSON.parse(output).result);
-          } catch (e) {
-            rej(e);
-          }
-        });
-      }
-    );
-
-    postRequest.write(body);
-    postRequest.end();
-  });
+    const result = JSON.parse(response.body);
+    return result.result as Array<{ id: number; name: string }>;
+  } catch (e) {
+    console.error('Error connecting to Zotero:', e);
+    throw new Error(`Error connecting to Zotero: ${e}`);
+  }
 }
 
 function panNum(n: number) {
@@ -255,53 +258,29 @@ export async function getZModified(
 ): Promise<CSLList> {
   if (!(await isZoteroRunning(port))) return null;
 
-  return new Promise((res, rej) => {
-    const body = JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'item.search',
-      params: [[['dateModified', 'isAfter', timestampToZDate(since)]], groupId],
+  const body = JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'item.search',
+    params: [[['dateModified', 'isAfter', timestampToZDate(since)]], groupId],
+  });
+
+  try {
+    const response = await requestZotero(port, '/better-bibtex/json-rpc', {
+      method: 'POST',
+      headers: { 'Content-Length': Buffer.byteLength(body).toString() },
+      body,
     });
 
-    const postRequest = request(
-      {
-        host: '127.0.0.1',
-        port: port,
-        path: '/better-bibtex/json-rpc',
-        method: 'POST',
-        headers: {
-          ...defaultHeaders,
-          'Content-Length': Buffer.byteLength(body),
-        },
-      },
-      (result) => {
-        let output = '';
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`HTTP ${response.status}`);
+    }
 
-        result.setEncoding('utf8');
-        result.on('data', (chunk) => (output += chunk));
-        result.on('error', (e) => rej(`Error connecting to Zotero: ${e}`));
-        result.on('close', () => {
-          rej(new Error('Error: cannot connect to Zotero'));
-        });
-        result.on('end', () => {
-          try {
-            res(JSON.parse(output).result);
-          } catch (e) {
-            rej(e);
-          }
-        });
-      }
-    );
-
-    postRequest.write(body);
-    postRequest.end();
-  });
-}
-
-function applyGroupID(list: CSLList, groupId: number) {
-  return list.map((item) => {
-    item.groupID = groupId;
-    return item;
-  });
+    const result = JSON.parse(response.body);
+    return result.result as CSLList;
+  } catch (e) {
+    console.error('Error connecting to Zotero:', e);
+    return null;
+  }
 }
 
 export async function getZBib(
@@ -326,15 +305,98 @@ export async function getZBib(
     }
   }
 
-  const bib = await download(
-    `http://127.0.0.1:${port}/better-bibtex/export/library?/${groupId}/library.json`
-  );
+  try {
+    const list = await getZoteroItems(port, groupId);
+    fs.writeFileSync(cached, JSON.stringify(list));
+    return list;
+  } catch (e) {
+    console.error('Error fetching bibliography from Zotero:', e);
+    return null;
+  }
+}
 
-  const str = bib.toString();
+async function getZoteroItems(port: string, groupId: number): Promise<CSLList> {
+  const items: CSLList = [];
+  const limit = 100;
+  let start = 0;
 
-  fs.writeFileSync(cached, str);
+  for (;;) {
+    const libraryPath =
+      groupId === 1 ? '/api/users/0/items' : `/api/groups/${groupId}/items`;
+    const response = await requestZotero(
+      port,
+      `${libraryPath}?format=json&limit=${limit}&start=${start}`
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`HTTP ${response.status}`);
+    }
 
-  return applyGroupID(JSON.parse(str) as CSLList, groupId);
+    const page = JSON.parse(response.body) as ZoteroItem[];
+    if (!Array.isArray(page)) {
+      throw new Error('Zotero local API returned an invalid item list.');
+    }
+
+    for (const item of page) {
+      if (!item.data?.citationKey || !item.data.title) continue;
+      items.push(toCSLEntry(item.data, groupId));
+    }
+
+    if (page.length < limit) break;
+    start += page.length;
+  }
+
+  return items;
+}
+
+interface ZoteroItem {
+  data?: {
+    citationKey?: string;
+    title?: string;
+    abstractNote?: string;
+    itemType?: string;
+    date?: string;
+    creators?: Array<{
+      creatorType?: string;
+      firstName?: string;
+      lastName?: string;
+      name?: string;
+    }>;
+    [key: string]: unknown;
+  };
+}
+
+interface ZoteroCSLEntry extends PartialCSLEntry {
+  [key: string]: unknown;
+}
+
+function toCSLEntry(
+  data: NonNullable<ZoteroItem['data']>,
+  groupId: number
+): ZoteroCSLEntry {
+  const entry: ZoteroCSLEntry = {
+    ...(data as unknown as Record<string, unknown>),
+    id: data.citationKey,
+    title: data.title,
+    groupID: groupId,
+  };
+
+  if (data.abstractNote) entry.abstract = data.abstractNote;
+  if (data.itemType) entry.type = data.itemType;
+  if (data.date) {
+    const year = data.date.match(/\d{4}/)?.[0];
+    if (year) entry.issued = { 'date-parts': [[Number(year)]] };
+  }
+  if (data.creators) {
+    entry.author = data.creators
+      .filter((creator) => creator.creatorType === 'author')
+      .map((creator) =>
+        creator.name
+          ? { literal: creator.name }
+          : { family: creator.lastName, given: creator.firstName }
+      );
+  }
+
+  return entry;
 }
 
 export async function refreshZBib(
@@ -343,10 +405,6 @@ export async function refreshZBib(
   groupId: number,
   since: number
 ) {
-  if (!(await isZoteroRunning(port))) {
-    return null;
-  }
-
   const cached = path.join(cacheDir, `zotero-library-${groupId}.json`);
   ensureDir(cacheDir);
   if (!fs.existsSync(cached)) {
@@ -392,18 +450,31 @@ export async function refreshZBib(
 }
 
 export async function isZoteroRunning(port: string = DEFAULT_ZOTERO_PORT) {
-  const p = download(`http://127.0.0.1:${port}/better-bibtex/cayw?probe=true`);
-  const res = await Promise.race([
-    p,
-    new Promise((res) => {
-      getGlobal().setTimeout(() => {
-        res(null);
-        p.destroy();
-      }, 150);
-    }),
-  ]);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await requestZotero(
+        port,
+        '/better-bibtex/cayw?probe=true',
+        {},
+        2000
+      );
+      if (
+        response.status >= 200 &&
+        response.status < 300 &&
+        response.body.trim() === 'ready'
+      ) {
+        return true;
+      }
+    } catch {
+      // Better BibTeX can briefly close the probe connection while starting.
+    }
 
-  return res?.toString() === 'ready';
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
+  return false;
 }
 
 export async function getItemJSONFromCiteKeys(
@@ -414,47 +485,25 @@ export async function getItemJSONFromCiteKeys(
   if (!(await isZoteroRunning(port))) return null;
 
   let res: any;
+
   try {
-    res = await new Promise((res, rej) => {
-      const body = JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'item.export',
-        params: [citeKeys, '36a3b0b5-bad0-4a04-b79b-441c7cef77db', libraryID],
-      });
-
-      const postRequest = request(
-        {
-          host: '127.0.0.1',
-          port: port,
-          path: '/better-bibtex/json-rpc',
-          method: 'POST',
-          headers: {
-            ...defaultHeaders,
-            'Content-Length': Buffer.byteLength(body),
-          },
-        },
-        (result) => {
-          let output = '';
-
-          result.setEncoding('utf8');
-          result.on('data', (chunk) => (output += chunk));
-          result.on('error', (e) => rej(`Error connecting to Zotero: ${e}`));
-          result.on('close', () => {
-            rej(new Error('Error: cannot connect to Zotero'));
-          });
-          result.on('end', () => {
-            try {
-              res(JSON.parse(output));
-            } catch (e) {
-              rej(e);
-            }
-          });
-        }
-      );
-
-      postRequest.write(body);
-      postRequest.end();
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'item.export',
+      params: [citeKeys, '36a3b0b5-bad0-4a04-b79b-441c7cef77db', libraryID],
     });
+
+    const response = await requestZotero(port, '/better-bibtex/json-rpc', {
+      method: 'POST',
+      headers: { 'Content-Length': Buffer.byteLength(body).toString() },
+      body,
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    res = JSON.parse(response.body);
   } catch (e) {
     console.error(e);
     return null;
@@ -473,4 +522,11 @@ export async function getItemJSONFromCiteKeys(
     console.error(e);
     return null;
   }
+}
+
+function applyGroupID(list: CSLList, groupId: number) {
+  return list.map((item) => {
+    item.groupID = groupId;
+    return item;
+  });
 }

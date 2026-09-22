@@ -2,7 +2,6 @@ import { TFile } from 'obsidian';
 
 import { t } from './lang/helpers';
 import ReferenceList from './main';
-import clip from 'text-clipper';
 
 export class TooltipManager {
   plugin: ReferenceList;
@@ -50,14 +49,6 @@ export class TooltipManager {
 
         if (html) {
           if (!content) content = createFragment();
-          if (keys.length > 1) {
-            let target = html.find('.csl-right-inline');
-            if (!target) target = html.find('.csl-entry');
-            if (!target) target = html;
-            const inner = target.innerHTML;
-            const clipped = clip(inner, 100, { html: true });
-            target.innerHTML = clipped;
-          }
           content.append(html);
         }
       }

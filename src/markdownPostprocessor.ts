@@ -2,7 +2,6 @@ import { MarkdownPostProcessorContext } from 'obsidian';
 
 import ReferenceList from './main';
 import { Segment, SegmentType, getCitationSegments } from './parser/parser';
-import equal from 'fast-deep-equal';
 
 function getCiteClass(isResolved: boolean, isUnresolved: boolean) {
   const cls = ['pandoc-citation'];
@@ -12,8 +11,12 @@ function getCiteClass(isResolved: boolean, isUnresolved: boolean) {
   return cls.join(' ');
 }
 
-function onlyValType(segs: Segment[]) {
-  return segs.map((s) => ({ type: s.type, val: s.val }));
+function citationSignature(segs: Segment[]) {
+  let signature = '';
+  for (const segment of segs) {
+    signature += `${segment.type}\u0000${segment.val}\u0001`;
+  }
+  return signature;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -36,6 +39,14 @@ export function processCiteKeys(plugin: ReferenceList) {
       : cache?.citations;
 
     if (!sectionCites?.length) return;
+
+    const citationsBySignature = new Map<
+      string,
+      (typeof sectionCites)[number]
+    >();
+    for (const citation of sectionCites) {
+      citationsBySignature.set(citationSignature(citation.data), citation);
+    }
 
     let node;
     while ((node = walker.nextNode())) {
@@ -60,9 +71,7 @@ export function processCiteKeys(plugin: ReferenceList) {
       for (const match of segments) {
         if (!didMatch) didMatch = true;
 
-        const rendered = sectionCites.find((c) =>
-          equal(onlyValType(c.data), onlyValType(match))
-        );
+        const rendered = citationsBySignature.get(citationSignature(match));
 
         if (rendered) {
           const preCite = content.substring(pos, match[0].from);

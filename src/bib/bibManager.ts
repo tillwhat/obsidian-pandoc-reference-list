@@ -22,14 +22,13 @@ import {
   getCitationSegments,
   getCitations,
 } from 'src/parser/parser';
-import LRUCache from 'lru-cache';
+import { LRUCache } from 'lru-cache';
 import { Keymap, MarkdownView, TFile, setIcon } from 'obsidian';
 import { cite } from 'src/parser/citeproc';
 import { setCiteKeyCache } from 'src/editorExtension';
-import equal from 'fast-deep-equal';
 import { t } from 'src/lang/helpers';
-import path from 'path';
-import { FSWatcher, watch, existsSync } from 'fs';
+import path from 'node:path';
+import { FSWatcher, watch, existsSync } from 'node:fs';
 
 const fuseSettings = {
   includeMatches: true,
@@ -40,6 +39,61 @@ const fuseSettings = {
     { name: 'title', weight: 0.3 },
   ],
 };
+
+function citationsEqual(first: RenderedCitation[], second: RenderedCitation[]) {
+  if (first === second) return true;
+  if (!first || !second || first.length !== second.length) return false;
+
+  for (let i = 0; i < first.length; i++) {
+    const a = first[i];
+    const b = second[i];
+    if (
+      a.val !== b.val ||
+      a.from !== b.from ||
+      a.to !== b.to ||
+      a.noteIndex !== b.noteIndex ||
+      a.note !== b.note ||
+      a.data.length !== b.data.length ||
+      a.citations.length !== b.citations.length
+    ) {
+      return false;
+    }
+
+    for (let j = 0; j < a.data.length; j++) {
+      const firstSegment = a.data[j];
+      const secondSegment = b.data[j];
+      if (
+        firstSegment.type !== secondSegment.type ||
+        firstSegment.from !== secondSegment.from ||
+        firstSegment.to !== secondSegment.to ||
+        firstSegment.val !== secondSegment.val
+      ) {
+        return false;
+      }
+    }
+
+    for (let j = 0; j < a.citations.length; j++) {
+      const firstCitation = a.citations[j];
+      const secondCitation = b.citations[j];
+      if (
+        firstCitation.id !== secondCitation.id ||
+        firstCitation.prefix !== secondCitation.prefix ||
+        firstCitation.suffix !== secondCitation.suffix ||
+        firstCitation.infix !== secondCitation.infix ||
+        firstCitation.locator !== secondCitation.locator ||
+        firstCitation.label !== secondCitation.label ||
+        firstCitation['suppress-author'] !==
+          secondCitation['suppress-author'] ||
+        firstCitation['author-only'] !== secondCitation['author-only'] ||
+        firstCitation.composite !== secondCitation.composite
+      ) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
 
 interface ScopedSettings {
   style?: string;
@@ -89,8 +143,16 @@ function getScopedSettings(file: TFile): ScopedSettings {
   }
 
   // Checks whether the bibliography is a relative path and replaces the path with an absolute one
-  if (existsSync(path.join(getVaultRoot(), path.dirname(file.path), output.bibliography))){
-    output.bibliography = path.join(getVaultRoot(), path.dirname(file.path), output.bibliography);
+  if (
+    existsSync(
+      path.join(getVaultRoot(), path.dirname(file.path), output.bibliography)
+    )
+  ) {
+    output.bibliography = path.join(
+      getVaultRoot(),
+      path.dirname(file.path),
+      output.bibliography
+    );
   }
 
   return output;
@@ -709,7 +771,7 @@ export class BibManager {
 
     if (
       cachedDoc &&
-      equal(cachedDoc.citations, citations) &&
+      citationsEqual(cachedDoc.citations, citations) &&
       areSettingsEqual
     ) {
       return cachedDoc.bib;

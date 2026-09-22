@@ -7,8 +7,6 @@ import {
   debounce,
   setIcon,
 } from 'obsidian';
-import which from 'which';
-
 import {
   citeKeyCacheField,
   citeKeyPlugin,
@@ -24,8 +22,8 @@ import {
 } from './settings';
 import { TooltipManager } from './tooltip';
 import { ReferenceListView, viewType } from './view';
-import { PromiseCapability, fixPath, getVaultRoot } from './helpers';
-import path from 'path';
+import { PromiseCapability, findExecutable, fixPath, getVaultRoot } from './helpers';
+import path from 'node:path';
 import { BibManager } from './bib/bibManager';
 import { CiteSuggest } from './citeSuggest/citeSuggest';
 import { isZoteroRunning } from './bib/helpers';
@@ -68,7 +66,9 @@ export default class ReferenceList extends Plugin {
       })
       .finally(() => this.bibManager.initPromise.resolve());
 
-    this.addSettingTab(new ReferenceListSettingsTab(this));
+    const settingsTab = new ReferenceListSettingsTab(this);
+    this.addSettingTab(settingsTab);
+    void settingsTab.refreshZoteroGroups();
     this.registerEditorSuggest(new CiteSuggest(app, this));
     this.tooltipManager = new TooltipManager(this);
     this.registerMarkdownPostProcessor(processCiteKeys(this));
@@ -84,7 +84,8 @@ export default class ReferenceList extends Plugin {
       if (!this.settings.pathToPandoc) {
         try {
           // Attempt to find if/where pandoc is located on the user's machine
-          const pathToPandoc = await which('pandoc');
+          const pathToPandoc = findExecutable('pandoc');
+          if (!pathToPandoc) throw new Error('Pandoc was not found.');
           this.settings.pathToPandoc = pathToPandoc;
           this.saveSettings();
         } catch {
@@ -313,7 +314,7 @@ export default class ReferenceList extends Plugin {
           !!this.settings.hideLinks
         );
 
-        cb && cb();
+        if (cb) cb();
 
         this.processReferences();
       }

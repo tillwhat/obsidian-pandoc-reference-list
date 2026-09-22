@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 
-import path from 'path';
+import path from 'node:path';
 import {
   bibToCSL,
   getCSLLocale,
@@ -20,7 +20,7 @@ import testBIB2CSL from './test2.bib.json';
 import testYAMLCSL from './test.yaml.json';
 // @ts-ignore
 // import library from './My Library.json';
-import { existsSync, rmSync } from 'fs';
+import { existsSync, rmSync } from 'node:fs';
 
 describe('bibToCSL()', () => {
   it('returns json from json', async () => {
@@ -65,7 +65,10 @@ global.setImmediate =
   // @ts-ignore
   global.setImmediate || ((fn, ...args) => global.setTimeout(fn, 0, ...args));
 
-describe('getLocale()', () => {
+const describeIntegration =
+  process.env.RUN_INTEGRATION_TESTS === '1' ? describe : describe.skip;
+
+describeIntegration('getLocale() network integration test', () => {
   it('fetches a locale', async () => {
     const cache = new Map<string, string>();
     jest.spyOn(navigator, 'onLine', 'get').mockReturnValueOnce(true);
@@ -77,7 +80,7 @@ describe('getLocale()', () => {
   });
 });
 
-describe('getStyle()', () => {
+describeIntegration('getStyle() network integration test', () => {
   it('fetches a style', async () => {
     const cache = new Map<string, string>();
     jest.spyOn(navigator, 'onLine', 'get').mockReturnValueOnce(true);
@@ -103,7 +106,7 @@ describe('getStyle()', () => {
   });
 });
 
-describe('getZUserGroups()', () => {
+describeIntegration('getZUserGroups() integration test', () => {
   it('retrieves user groups', async () => {
     expect(await getZUserGroups('23119')).toEqual([
       { id: 1, name: 'My Library' },
@@ -118,7 +121,7 @@ describe('getZUserGroups()', () => {
 //   });
 // });
 
-describe('isZoteroRunning()', () => {
+describeIntegration('isZoteroRunning() integration test', () => {
   it('runs', async () => {
     expect(await isZoteroRunning('23119')).toBe(true);
   });

@@ -22,14 +22,14 @@ export class CiteSuggest extends EditorSuggest<
   Fuse.FuseResult<PartialCSLEntry> | Loading
 > {
   private plugin: ReferenceList;
-  private app: App;
+  private appInstance: App;
 
   limit: number = 20;
 
   constructor(app: App, plugin: ReferenceList) {
     super(app);
 
-    this.app = app;
+    this.appInstance = app;
     this.plugin = plugin;
 
     (this as any).suggestEl.addClass('pwc-suggest');
@@ -146,7 +146,8 @@ export class CiteSuggest extends EditorSuggest<
     suggestion: Fuse.FuseResult<PartialCSLEntry>,
     event: KeyboardEvent | MouseEvent
   ): void {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const activeView =
+      this.appInstance.workspace.getActiveViewOfType(MarkdownView);
     if (!activeView) {
       return;
     }

@@ -1,21 +1,48 @@
-import { Notice, PluginSettingTab, Setting, TextComponent } from 'obsidian';
-import which from 'which';
-
+import {
+  AbstractInputSuggest,
+  Notice,
+  PluginSettingTab,
+  Setting,
+  SettingDefinitionItem,
+  SettingDefinitionRender,
+  TextComponent,
+} from 'obsidian';
 import { t } from './lang/helpers';
 import ReferenceList from './main';
-import ReactDOM from 'react-dom';
-import React from 'react';
-import { SettingItem } from './settings/SettingItem';
-import AsyncSelect from 'react-select/async';
-import {
-  NoOptionMessage,
-  customSelectStyles,
-  loadCSLLangOptions,
-  loadCSLOptions,
-} from './settings/select.helpers';
-import { cslListRaw } from './bib/cslList';
-import { langListRaw } from './bib/cslLangList';
-import { ZoteroPullSetting } from './settings/ZoteroPullSetting';
+import { DEFAULT_ZOTERO_PORT, getZUserGroups } from './bib/helpers';
+import { cslList, cslListRaw } from './bib/cslList';
+import { langList, langListRaw } from './bib/cslLangList';
+import { findExecutable } from './helpers';
+
+interface SearchOption {
+  label: string;
+  value: string;
+}
+
+class OptionSuggest extends AbstractInputSuggest<SearchOption> {
+  constructor(
+    app: ReferenceList['app'],
+    inputEl: HTMLInputElement,
+    private readonly search: (query: string) => SearchOption[],
+    private readonly onSelectOption: (option: SearchOption) => void
+  ) {
+    super(app, inputEl);
+  }
+
+  getSuggestions(query: string) {
+    return this.search(query).slice(0, 100);
+  }
+
+  renderSuggestion(option: SearchOption, el: HTMLElement) {
+    el.setText(option.label);
+  }
+
+  selectSuggestion(option: SearchOption) {
+    this.setValue(option.label);
+    this.onSelectOption(option);
+    this.close();
+  }
+}
 
 export const DEFAULT_SETTINGS: ReferenceListSettings = {
   pathToPandoc: '',
@@ -55,326 +82,368 @@ export interface ReferenceListSettings {
 
 export class ReferenceListSettingsTab extends PluginSettingTab {
   plugin: ReferenceList;
+  private zoteroConnected = false;
+  private zoteroGroups: ZoteroGroup[] = [];
 
   constructor(plugin: ReferenceList) {
-    super(app, plugin);
+    super(plugin.app, plugin);
     this.plugin = plugin;
   }
 
-  display(): void {
-    const { containerEl } = this;
+  async refreshZoteroGroups() {
+    try {
+      const groups = await getZUserGroups(
+        this.plugin.settings.zoteroPort ?? DEFAULT_ZOTERO_PORT
+      );
+      if (!groups) {
+        throw new Error('Zotero is not available.');
+      }
+      this.zoteroGroups = groups;
+      const validIds = new Set(this.zoteroGroups.map((group) => group.id));
+      this.plugin.settings.zoteroGroups =
+        this.plugin.settings.zoteroGroups.filter((group) =>
+          validIds.has(group.id)
+        );
+      this.zoteroConnected = true;
+      await this.plugin.saveSettings();
+    } catch (error) {
+      this.zoteroConnected = false;
+      console.error('Error connecting to Zotero:', error);
+    }
+    this.update();
+  }
 
-    containerEl.empty();
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    const renderTextSetting = (
+      key: 'pathToPandoc' | 'pathToBibliography' | 'cslStylePath',
+      onChange?: () => void
+    ): Pick<SettingDefinitionRender, 'render'> => ({
+      render: (setting: Setting) => {
+        setting.addText((text) =>
+          text
+            .setValue(this.plugin.settings[key] ?? '')
+            .onChange((value: string) => {
+              const previous = this.plugin.settings[key];
+              this.plugin.settings[key] = value;
+              void this.plugin.saveSettings(() => {
+                if (key === 'pathToBibliography' && previous) {
+                  this.plugin.bibManager.clearWatcher(previous);
+                }
+                onChange?.();
+              });
+            })
+        );
+      },
+    });
+    const renderToggleSetting = (
+      key:
+        | 'hideLinks'
+        | 'renderCitations'
+        | 'renderCitationsReadingMode'
+        | 'renderLinkCitations'
+        | 'enableCiteKeyCompletion'
+        | 'showCitekeyTooltips'
+    ): Pick<SettingDefinitionRender, 'render'> => ({
+      render: (setting: Setting) => {
+        setting.addToggle((toggle) =>
+          toggle.setValue(!!this.plugin.settings[key]).onChange((value) => {
+            this.plugin.settings[key] = value;
+            void this.plugin.saveSettings();
+          })
+        );
+      },
+    });
+    const renderSliderSetting: Pick<SettingDefinitionRender, 'render'> = {
+      render: (setting: Setting) => {
+        setting.addSlider((slider) =>
+          slider
+            .setDynamicTooltip()
+            .setLimits(0, 7000, 100)
+            .setValue(this.plugin.settings.tooltipDelay)
+            .onChange((value) => {
+              this.plugin.settings.tooltipDelay = value;
+              void this.plugin.saveSettings();
+            })
+        );
+      },
+    };
 
-    new Setting(containerEl)
-      .setName(t('Fallback path to Pandoc'))
-      .setDesc(
-        t(
+    return [
+      {
+        name: t('Fallback path to Pandoc'),
+        desc: t(
           "The absolute path to the Pandoc executable. This plugin will attempt to locate pandoc for you and will use this path if it fails to do so. To find pandoc, use the output of 'which pandoc' in a terminal on Mac/Linux or 'Get-Command pandoc' in powershell on Windows."
-        )
-      )
-      .then((setting) => {
-        let input: TextComponent;
-        setting.addText((text) => {
-          input = text;
-          text.setValue(this.plugin.settings.pathToPandoc).onChange((value) => {
-            this.plugin.settings.pathToPandoc = value;
-            this.plugin.saveSettings();
+        ),
+        render: (setting: Setting) => {
+          let input: TextComponent;
+          setting.addText((text) => {
+            input = text;
+            text
+              .setValue(this.plugin.settings.pathToPandoc ?? '')
+              .onChange((value: string) => {
+                this.plugin.settings.pathToPandoc = value;
+                void this.plugin.saveSettings();
+              });
           });
-        });
-
-        setting.addExtraButton((b) => {
-          b.setIcon('magnifying-glass');
-          b.setTooltip(t('Attempt to find Pandoc automatically'));
-          b.onClick(() => {
-            which('pandoc')
-              .then((pathToPandoc) => {
-                if (pathToPandoc) {
+          setting.addExtraButton((button) => {
+            button
+              .setIcon('magnifying-glass')
+              .setTooltip(t('Attempt to find Pandoc automatically'))
+              .onClick(async () => {
+                try {
+                  const pathToPandoc = findExecutable('pandoc');
+                  if (!pathToPandoc) throw new Error('Pandoc was not found.');
                   input.setValue(pathToPandoc);
-
                   this.plugin.settings.pathToPandoc = pathToPandoc;
-                  this.plugin.saveSettings();
-                } else {
+                  await this.plugin.saveSettings();
+                } catch (error) {
                   new Notice(
                     t(
                       'Unable to find pandoc on your system. If it is installed, please manually enter a path.'
                     )
                   );
+                  console.error(error);
                 }
-              })
-              .catch((e) => {
-                new Notice(
-                  t(
-                    'Unable to find pandoc on your system. If it is installed, please manually enter a path.'
-                  )
-                );
-                console.error(e);
               });
           });
-        });
-      });
-
-    new Setting(containerEl)
-      .setName(t('Path to bibliography file'))
-      .setDesc(
-        t(
+        },
+      },
+      {
+        name: t('Path to bibliography file'),
+        desc: t(
           'The absolute path to your desired bibliography file. This can be overridden on a per-file basis by setting "bibliography" in the file\'s frontmatter.'
-        )
-      )
-      .then((setting) => {
-        let input: TextComponent;
-        setting.addText((text) => {
-          input = text;
-          text
-            .setValue(this.plugin.settings.pathToBibliography)
-            .onChange((value) => {
-              const prev = this.plugin.settings.pathToBibliography;
-              this.plugin.settings.pathToBibliography = value;
-              this.plugin.saveSettings(() => {
-                this.plugin.bibManager.clearWatcher(prev);
-                this.plugin.bibManager.reinit(true);
+        ),
+        ...renderTextSetting('pathToBibliography', () =>
+          this.plugin.bibManager.reinit(true)
+        ),
+      },
+      {
+        type: 'group',
+        heading: 'Zotero',
+        cls: 'pwc-zotero-settings',
+        items: [
+          {
+            name: t('Pull bibliography from Zotero'),
+            desc: t(
+              'When enabled, bibliography data will be pulled from Zotero rather than a bibliography file. The Better Bibtex plugin must be installed in Zotero.'
+            ),
+            render: (setting: Setting) => {
+              setting.addToggle((toggle) =>
+                toggle
+                  .setValue(!!this.plugin.settings.pullFromZotero)
+                  .onChange(async (value) => {
+                    this.plugin.settings.pullFromZotero = value;
+                    if (
+                      value &&
+                      this.zoteroConnected &&
+                      !this.plugin.settings.zoteroGroups.length
+                    ) {
+                      const myLibrary = this.zoteroGroups.find(
+                        (group) => group.id === 1
+                      );
+                      if (myLibrary) {
+                        this.plugin.settings.zoteroGroups = [myLibrary];
+                      }
+                    }
+                    await this.plugin.saveSettings(() =>
+                      this.plugin.bibManager.reinit(true)
+                    );
+                    this.update();
+                  })
+              );
+            },
+          },
+          {
+            name: t('Cannot connect to Zotero'),
+            desc: t('Start Zotero and try again.'),
+            visible: () => !this.zoteroConnected,
+            render: (setting: Setting) => {
+              setting.addButton((button) =>
+                button
+                  .setButtonText(t('Retry'))
+                  .setCta()
+                  .onClick(() => this.refreshZoteroGroups())
+              );
+            },
+          },
+          {
+            name: t('Zotero port'),
+            desc: t(
+              "Use 24119 for Juris-M or specify a custom port if you have changed Zotero's default."
+            ),
+            visible: () => !!this.plugin.settings.pullFromZotero,
+            render: (setting: Setting) => {
+              setting.addText((text) =>
+                text
+                  .setValue(
+                    this.plugin.settings.zoteroPort ?? DEFAULT_ZOTERO_PORT
+                  )
+                  .onChange(async (value) => {
+                    this.plugin.settings.zoteroPort = value;
+                    await this.plugin.saveSettings();
+                    await this.refreshZoteroGroups();
+                  })
+              );
+            },
+          },
+          ...this.zoteroGroups.map((group) => ({
+            name: group.name,
+            visible: () =>
+              !!this.plugin.settings.pullFromZotero && this.zoteroConnected,
+            render: (setting: Setting) => {
+              setting.addToggle((toggle) =>
+                toggle
+                  .setValue(
+                    this.plugin.settings.zoteroGroups.some(
+                      (selected) => selected.id === group.id
+                    )
+                  )
+                  .onChange(async (value) => {
+                    this.plugin.settings.zoteroGroups = value
+                      ? [...this.plugin.settings.zoteroGroups, group]
+                      : this.plugin.settings.zoteroGroups.filter(
+                          (selected) => selected.id !== group.id
+                        );
+                    await this.plugin.saveSettings(() =>
+                      this.plugin.bibManager.reinit(true)
+                    );
+                  })
+              );
+            },
+          })),
+        ],
+      },
+      {
+        name: t('Citation style'),
+        render: (setting: Setting) => {
+          const selected = cslListRaw.find(
+            (item) => item.value === this.plugin.settings.cslStyleURL
+          );
+          setting.addSearch((search) => {
+            search
+              .setPlaceholder(t('Search...'))
+              .setValue(selected?.label ?? '')
+              .onChange((value) => {
+                if (!value) {
+                  this.plugin.settings.cslStyleURL = undefined;
+                  void this.plugin.saveSettings(() =>
+                    this.plugin.bibManager.reinit(false)
+                  );
+                }
               });
-            });
-        });
-
-        setting.addExtraButton((b) => {
-          b.setIcon('folder');
-          b.setTooltip(t('Select a bibliography file.'));
-          b.onClick(() => {
-            const path = require('electron').remote.dialog.showOpenDialogSync({
-              properties: ['openFile'],
-            });
-
-            if (path && path.length) {
-              input.setValue(path[0]);
-
-              this.plugin.settings.pathToBibliography = path[0];
-              this.plugin.saveSettings(() =>
-                this.plugin.bibManager.reinit(true)
-              );
-            }
-          });
-        });
-      });
-
-    ReactDOM.render(
-      <ZoteroPullSetting plugin={this.plugin} />,
-      containerEl.createDiv('setting-item pwc-setting-item-wrapper')
-    );
-
-    const defaultStyle = cslListRaw.find(
-      (item) => item.value === this.plugin.settings.cslStyleURL
-    );
-
-    ReactDOM.render(
-      <SettingItem name={t('Citation style')}>
-        <AsyncSelect
-          noOptionsMessage={NoOptionMessage}
-          placeholder={t('Search...')}
-          cacheOptions
-          className="pwc-multiselect"
-          defaultValue={defaultStyle}
-          loadOptions={loadCSLOptions}
-          isClearable
-          onChange={(selection: any) => {
-            this.plugin.settings.cslStyleURL = selection?.value;
-            this.plugin.saveSettings(() =>
-              this.plugin.bibManager.reinit(false)
+            new OptionSuggest(
+              this.plugin.app,
+              search.inputEl,
+              (query) =>
+                cslList.search(query).map((result) => ({
+                  label: result.item.label,
+                  value: result.item.value,
+                })),
+              (option) => {
+                this.plugin.settings.cslStyleURL = option.value;
+                void this.plugin.saveSettings(() =>
+                  this.plugin.bibManager.reinit(false)
+                );
+              }
             );
-          }}
-          styles={customSelectStyles}
-        />
-      </SettingItem>,
-      containerEl.createDiv('pwc-setting-item setting-item')
-    );
-
-    new Setting(containerEl)
-      .setName(t('Custom citation style'))
-      .setDesc(
-        t(
+          });
+        },
+      },
+      {
+        name: t('Custom citation style'),
+        desc: t(
           'Path to a CSL file. This can be an absolute path or one relative to your vault. This will override the style selected above. This can be overridden on a per-file basis by setting "csl" or "citation-style" in the file\'s frontmatter. A URL can be supplied when setting the style via frontmatter.'
-        )
-      )
-      .then((setting) => {
-        let input: TextComponent;
-        setting.addText((text) => {
-          input = text;
-          text.setValue(this.plugin.settings.cslStylePath).onChange((value) => {
-            this.plugin.settings.cslStylePath = value;
-            this.plugin.saveSettings(() =>
-              this.plugin.bibManager.reinit(false)
+        ),
+        ...renderTextSetting('cslStylePath', () =>
+          this.plugin.bibManager.reinit(false)
+        ),
+      },
+      {
+        name: t('Citation style language'),
+        desc: t(
+          'This can be overridden on a per-file basis by setting "lang" or "citation-language" in the file\'s frontmatter. A language code must be used when setting the language via frontmatter.'
+        ),
+        render: (setting: Setting) => {
+          const selected = langListRaw.find(
+            (item) => item.value === this.plugin.settings.cslLang
+          );
+          setting.addSearch((search) => {
+            search
+              .setPlaceholder(t('Search...'))
+              .setValue(selected?.label ?? '')
+              .onChange((value) => {
+                if (!value) {
+                  this.plugin.settings.cslLang = undefined;
+                  void this.plugin.saveSettings(() =>
+                    this.plugin.bibManager.reinit(false)
+                  );
+                }
+              });
+            new OptionSuggest(
+              this.plugin.app,
+              search.inputEl,
+              (query) =>
+                langList.search(query).map((result) => ({
+                  label: result.item.label,
+                  value: result.item.value,
+                })),
+              (option) => {
+                this.plugin.settings.cslLang = option.value;
+                void this.plugin.saveSettings(() =>
+                  this.plugin.bibManager.reinit(false)
+                );
+              }
             );
           });
-        });
-
-        setting.addExtraButton((b) => {
-          b.setIcon('folder');
-          b.setTooltip(t('Select a CSL file located on your computer'));
-          b.onClick(() => {
-            const path = require('electron').remote.dialog.showOpenDialogSync({
-              properties: ['openFile'],
-            });
-
-            if (path && path.length) {
-              input.setValue(path[0]);
-
-              this.plugin.settings.cslStylePath = path[0];
-              this.plugin.saveSettings(() =>
-                this.plugin.bibManager.reinit(false)
-              );
-            }
-          });
-        });
-      });
-
-    const defaultLanguage = langListRaw.find(
-      (item) => item.value === this.plugin.settings.cslLang
-    );
-
-    ReactDOM.render(
-      <SettingItem
-        name={t('Citation style language')}
-        description={
-          <>
-            {t(
-              `This can be overridden on a per-file basis by setting "lang" or "citation-language" in the file's frontmatter. A language code must be used when setting the language via frontmatter.`
-            )}{' '}
-            <a
-              href="https://github.com/citation-style-language/locales/blob/master/locales.json"
-              target="_blank"
-            >
-              {t('See here for a list of available language codes')}
-            </a>
-            .
-          </>
-        }
-      >
-        <AsyncSelect
-          noOptionsMessage={NoOptionMessage}
-          placeholder={t('Search...')}
-          cacheOptions
-          className="pwc-multiselect"
-          defaultValue={defaultLanguage}
-          loadOptions={loadCSLLangOptions}
-          isClearable
-          onChange={(selection: any) => {
-            this.plugin.settings.cslLang = selection.value;
-            this.plugin.saveSettings(() =>
-              this.plugin.bibManager.reinit(false)
-            );
-          }}
-          styles={customSelectStyles}
-        />
-      </SettingItem>,
-      containerEl.createDiv('pwc-setting-item setting-item')
-    );
-
-    new Setting(containerEl)
-      .setName(t('Hide links in references'))
-      .setDesc(t('Replace links with link icons to save space.'))
-      .addToggle((text) =>
-        text.setValue(!!this.plugin.settings.hideLinks).onChange((value) => {
-          this.plugin.settings.hideLinks = value;
-          this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName(t('Render live preview inline citations'))
-      .setDesc(
-        t(
+        },
+      },
+      {
+        name: t('Hide links in references'),
+        desc: t('Replace links with link icons to save space.'),
+        ...renderToggleSetting('hideLinks'),
+      },
+      {
+        name: t('Render live preview inline citations'),
+        desc: t(
           'Convert [@pandoc] citations to formatted inline citations in live preview mode.'
-        )
-      )
-      .addToggle((text) =>
-        text
-          .setValue(!!this.plugin.settings.renderCitations)
-          .onChange((value) => {
-            this.plugin.settings.renderCitations = value;
-            this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t('Render reading mode inline citations'))
-      .setDesc(
-        t(
+        ),
+        ...renderToggleSetting('renderCitations'),
+      },
+      {
+        name: t('Render reading mode inline citations'),
+        desc: t(
           'Convert [@pandoc] citations to formatted inline citations in reading mode.'
-        )
-      )
-      .addToggle((text) =>
-        text
-          .setValue(!!this.plugin.settings.renderCitationsReadingMode)
-          .onChange((value) => {
-            this.plugin.settings.renderCitationsReadingMode = value;
-            this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t('Process citations in links'))
-      .setDesc(
-        t(
+        ),
+        ...renderToggleSetting('renderCitationsReadingMode'),
+      },
+      {
+        name: t('Process citations in links'),
+        desc: t(
           'Include [[@pandoc]] citations in the reference list and format them as inline citations in live preview mode.'
-        )
-      )
-      .addToggle((text) =>
-        text
-          .setValue(!!this.plugin.settings.renderLinkCitations)
-          .onChange((value) => {
-            this.plugin.settings.renderLinkCitations = value;
-            this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t('Show citekey suggestions'))
-      .setDesc(
-        t(
+        ),
+        ...renderToggleSetting('renderLinkCitations'),
+      },
+      {
+        name: t('Show citekey suggestions'),
+        desc: t(
           'When enabled, an autocomplete dialog will display when typing citation keys.'
-        )
-      )
-      .addToggle((text) =>
-        text
-          .setValue(!!this.plugin.settings.enableCiteKeyCompletion)
-          .onChange((value) => {
-            this.plugin.settings.enableCiteKeyCompletion = value;
-            this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t('Show citekey tooltips'))
-      .setDesc(
-        t(
+        ),
+        ...renderToggleSetting('enableCiteKeyCompletion'),
+      },
+      {
+        name: t('Show citekey tooltips'),
+        desc: t(
           'When enabled, hovering over citekeys will open a tooltip containing a formatted citation.'
-        )
-      )
-      .addToggle((text) =>
-        text
-          .setValue(!!this.plugin.settings.showCitekeyTooltips)
-          .onChange((value) => {
-            this.plugin.settings.showCitekeyTooltips = value;
-            this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t('Tooltip delay'))
-      .setDesc(
-        t(
+        ),
+        ...renderToggleSetting('showCitekeyTooltips'),
+      },
+      {
+        name: t('Tooltip delay'),
+        desc: t(
           'Set the amount of time (in milliseconds) to wait before displaying tooltips.'
-        )
-      )
-      .addSlider((slider) => {
-        slider
-          .setDynamicTooltip()
-          .setLimits(0, 7000, 100)
-          .setValue(this.plugin.settings.tooltipDelay)
-          .onChange((value) => {
-            this.plugin.settings.tooltipDelay = value;
-            this.plugin.saveSettings();
-          });
-      });
+        ),
+        ...renderSliderSetting,
+      },
+    ];
   }
 }

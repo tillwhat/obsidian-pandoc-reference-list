@@ -1,3 +1,8 @@
 declare module 'shell-path';
 declare module 'delegate';
-declare module 'citeproc';
+
+import { App } from 'obsidian';
+
+declare global {
+  const app: App;
+}

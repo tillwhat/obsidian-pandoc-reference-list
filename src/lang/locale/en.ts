@@ -1,6 +1,7 @@
 // English
 
 export default {
+  Retry: 'Retry',
   // src/settings.ts
   'Path to bibliography file': 'Path to bibliography file',
   'The absolute path to your desired bibliography file. This can be overridden on a per-file basis by setting "bibliography" in the file\'s frontmatter.':

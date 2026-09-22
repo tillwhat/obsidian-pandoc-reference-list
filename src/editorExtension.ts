@@ -24,7 +24,6 @@ import {
   getCitationSegments,
 } from './parser/parser';
 import { BibManager, FileCache } from './bib/bibManager';
-import equal from 'fast-deep-equal';
 import { TooltipManager } from './tooltip';
 
 const ignoreListRegEx = /code|math|templater|hashtag/;
@@ -143,18 +142,50 @@ const citeDeco = (
     widget: new CiteWidget(cite, sourcePath, linkText),
   });
 
-function onlyValType(segs: Segment[]) {
-  return segs.map((s) => ({ type: s.type, val: s.val }));
+function citationSignature(segs: Segment[]) {
+  let signature = '';
+  for (const segment of segs) {
+    signature += `${segment.type}\u0000${segment.val}\u0001`;
+  }
+  return signature;
 }
+
+const refreshCitations = StateEffect.define<void>();
 
 export const citeKeyPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    refreshFrame: number | null = null;
+    calloutObserver: MutationObserver;
+
     constructor(view: EditorView) {
       this.decorations = this.mkDeco(view);
+      this.calloutObserver = new MutationObserver(() => {
+        if (this.refreshFrame !== null) return;
+        this.refreshFrame = requestAnimationFrame(() => {
+          this.refreshFrame = null;
+          this.renderCalloutCitations(view);
+        });
+      });
+      this.calloutObserver.observe(view.dom, {
+        childList: true,
+        subtree: true,
+      });
+      this.renderCalloutCitations(view);
     }
+
+    destroy() {
+      this.calloutObserver.disconnect();
+      if (this.refreshFrame !== null) {
+        cancelAnimationFrame(this.refreshFrame);
+      }
+    }
+
     update(update: ViewUpdate) {
-      if (
+      const refreshRequested = update.transactions.some((tr) =>
+        tr.effects.some((effect) => effect.is(refreshCitations))
+      );
+      const shouldRefresh =
         update.viewportChanged ||
         update.docChanged ||
         update.transactions.some((tr) =>
@@ -165,11 +196,89 @@ export const citeKeyPlugin = ViewPlugin.fromClass(
         ) ||
         (update.view.state.field(editorLivePreviewField) &&
           update.selectionSet &&
-          !update.view.plugin(livePreviewState)?.mousedown)
-      ) {
+          !update.view.plugin(livePreviewState)?.mousedown);
+
+      if (shouldRefresh) {
         this.decorations = this.mkDeco(update.view);
+        this.renderCalloutCitations(update.view);
+      }
+
+      if (
+        shouldRefresh &&
+        !refreshRequested &&
+        update.view.state.field(editorLivePreviewField) &&
+        this.refreshFrame === null
+      ) {
+        this.refreshFrame = requestAnimationFrame(() => {
+          this.refreshFrame = null;
+          update.view.dispatch({ effects: refreshCitations.of() });
+        });
       }
     }
+
+    renderCalloutCitations(view: EditorView) {
+      const cache = view.state.field(citeKeyCacheField);
+      if (!cache) return;
+
+      const citationsBySignature = new Map<string, RenderedCitation>();
+      for (const citation of cache.citations || []) {
+        citationsBySignature.set(citationSignature(citation.data), citation);
+      }
+
+      view.dom.querySelectorAll('.callout-content').forEach((content) => {
+        const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+        const textNodes: Text[] = [];
+        let node: Node;
+        while ((node = walker.nextNode())) {
+          if (
+            node.parentElement?.closest('.pandoc-citation') ||
+            node.parentElement?.closest('code')
+          ) {
+            continue;
+          }
+          textNodes.push(node as Text);
+        }
+
+        for (const textNode of textNodes) {
+          const text = textNode.nodeValue;
+          if (!text) continue;
+          const matches = getCitationSegments(
+            text,
+            !view.state.field(bibManagerField).plugin.settings
+              .renderLinkCitations
+          );
+          const replacements = matches
+            .map((match) => ({
+              match,
+              rendered: citationsBySignature.get(citationSignature(match)),
+            }))
+            .filter(
+              (
+                replacement
+              ): replacement is {
+                match: Segment[];
+                rendered: RenderedCitation;
+              } => !!replacement.rendered
+            );
+
+          for (let i = replacements.length - 1; i >= 0; i--) {
+            const { match, rendered } = replacements[i];
+            const start = match[0].from;
+            const end = match[match.length - 1].to;
+            const range = document.createRange();
+            range.setStart(textNode, start);
+            range.setEnd(textNode, end);
+            const citation = new CiteWidget(
+              rendered,
+              view.state.field(editorInfoField)?.file.path
+            ).toDOM();
+            range.deleteContents();
+            range.insertNode(citation);
+          }
+        }
+      });
+    }
+
     mkDeco(view: EditorView) {
       const {
         plugin: { settings },
@@ -185,8 +294,21 @@ export const citeKeyPlugin = ViewPlugin.fromClass(
       let tree: Tree;
 
       const matched = new Set<RenderedCitation>();
+      const citationsBySignature = new Map<string, RenderedCitation[]>();
+      for (const citation of citekeyCache?.citations || []) {
+        const signature = citationSignature(citation.data || []);
+        const matching = citationsBySignature.get(signature);
+        if (matching) {
+          matching.push(citation);
+        } else {
+          citationsBySignature.set(signature, [citation]);
+        }
+      }
 
-      for (const { from, to } of view.visibleRanges) {
+      // Use the editor viewport rather than visibleRanges. Obsidian's callout
+      // renderer can hide source lines from visibleRanges when the cursor is
+      // outside the callout, even though the callout remains on screen.
+      for (const { from, to } of [view.viewport]) {
         const range = view.state.sliceDoc(from, to);
         const segments = getCitationSegments(
           range,
@@ -195,11 +317,8 @@ export const citeKeyPlugin = ViewPlugin.fromClass(
 
         for (const match of segments) {
           if (!tree) tree = syntaxTree(view.state);
-          const rendered = citekeyCache?.citations.find(
-            (c) =>
-              !matched.has(c) &&
-              equal(onlyValType(c?.data || []), onlyValType(match))
-          );
+          const matching = citationsBySignature.get(citationSignature(match));
+          const rendered = matching?.find((citation) => !matched.has(citation));
 
           if (rendered) {
             matched.add(rendered);
