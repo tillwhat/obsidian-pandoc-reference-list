@@ -1,7 +1,8 @@
 // English
 
 export default {
-  Retry: 'Retry',
+  'Retry': 'Retry',
+
   // src/settings.ts
   'Path to bibliography file': 'Path to bibliography file',
   'The absolute path to your desired bibliography file. This can be overridden on a per-file basis by setting "bibliography" in the file\'s frontmatter.':
@@ -10,6 +11,8 @@ export default {
   'Custom citation style': 'Custom citation style',
   'Citation style': 'Citation style',
   'Citation style language': 'Citation style language',
+  'This can be overridden on a per-file basis by setting "lang" or "citation-language" in the file\'s frontmatter. A language code must be used when setting the language via frontmatter.':
+    'This can be overridden on a per-file basis by setting "lang" or "citation-language" in the file\'s frontmatter. A language code must be used when setting the language via frontmatter.',
   'Search...': 'Search...',
   'Path to a CSL file. This can be an absolute path or one relative to your vault. This will override the style selected above. This can be overridden on a per-file basis by setting "csl" or "citation-style" in the file\'s frontmatter. A URL can be supplied when setting the style via frontmatter.':
     'Path to a CSL file. This can be an absolute path or one relative to your vault. This will override the style selected above. This can be overridden on a per-file basis by setting "csl" or "citation-style" in the file\'s frontmatter. A URL can be supplied when setting the style via frontmatter.',
@@ -32,18 +35,19 @@ export default {
   'Set the amount of time (in milliseconds) to wait before displaying tooltips.':
     'Set the amount of time (in milliseconds) to wait before displaying tooltips.',
   'Validate Pandoc configuration': 'Validate Pandoc configuration',
-  Validate: 'Validate',
+  'Validate': 'Validate',
   'Validation successful': 'Validation successful',
   'Show citekey suggestions': 'Show citekey suggestions',
   'When enabled, an autocomplete dialog will display when typing citation keys.':
     'When enabled, an autocomplete dialog will display when typing citation keys.',
   'Pull bibliography from Zotero': 'Pull bibliography from Zotero',
-  'When enabled, bibliography data will be pulled from Zotero rather than a bibliography file. The Better Bibtex plugin must be installed in Zotero.':
-    'When enabled, bibliography data will be pulled from Zotero rather than a bibliography file. The Better Bibtex plugin must be installed in Zotero.',
+  'When enabled, bibliography data will be pulled from Zotero rather than a bibliography file.':
+    'When enabled, bibliography data will be pulled from Zotero rather than a bibliography file.',
   'Zotero port': 'Zotero port',
   "Use 24119 for Juris-M or specify a custom port if you have changed Zotero's default.":
     "Use 24119 for Juris-M or specify a custom port if you have changed Zotero's default.",
-  'Render live preview inline citations':
+  'Citation settings': 'Citation settings',
+    'Render live preview inline citations':
     'Render live preview inline citations',
   'Render reading mode inline citations':
     'Render reading mode inline citations',
@@ -54,26 +58,20 @@ export default {
   'Process citations in links': 'Process citations in links',
   'Include [[@pandoc]] citations in the reference list and format them as inline citations in live preview mode.':
     'Include [[@pandoc]] citations in the reference list and format them as inline citations in live preview mode.',
-  // src/view.ts
-  'Please provide the path to pandoc in the Pandoc Reference List plugin settings.':
-    'Please provide the path to pandoc in the Pandoc Reference List plugin settings.',
+  
+    // src/view.ts
   'Click to copy': 'Click to copy',
   'Copy list': 'Copy list',
   'No citations found in the current document.':
     'No citations found in the current document.',
-  References: 'References',
-  'This can be overridden on a per-file basis by setting "lang" or "citation-language" in the file\'s frontmatter. A language code must be used when setting the language via frontmatter.':
-    'This can be overridden on a per-file basis by setting "lang" or "citation-language" in the file\'s frontmatter. A language code must be used when setting the language via frontmatter.',
-  'See here for a list of available language codes':
-    'See here for a list of available language codes',
+  'References': 'References',
   'Cannot connect to Zotero': 'Cannot connect to Zotero',
   'Start Zotero and try again.': 'Start Zotero and try again.',
-  'Libraries to include in bibliography':
-    'Libraries to include in bibliography',
-  'Please provide the path to your pandoc compatible bibliography file in the Pandoc Reference List plugin settings.':
-    'Please provide the path to your pandoc compatible bibliography file in the Pandoc Reference List plugin settings.',
+  'Please check your Pandoc Reference List plugin settings.':
+    'Please check your Pandoc Reference List plugin settings.',
   'Refresh bibliography': 'Refresh bibliography',
   'Pandoc reference list settings': 'Pandoc reference list settings',
+  
   // src/tooltip.ts
   'No citation found for ': 'No citation found for ',
 
@@ -83,4 +81,5 @@ export default {
   // src/view.ts
   'Open literature note': 'Open literature note',
   'Open in Zotero': 'Open in Zotero',
+  'Open file in Zotero': 'Open file in Zotero',
 };

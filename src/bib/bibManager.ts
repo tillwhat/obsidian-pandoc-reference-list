@@ -8,7 +8,6 @@ import {
   getBibPath,
   getCSLLocale,
   getCSLStyle,
-  getItemJSONFromCiteKeys,
   getZBib,
   refreshZBib,
 } from './helpers';
@@ -429,7 +428,9 @@ export class BibManager {
 
   async loadAndRefreshGlobalZBib() {
     await this.loadGlobalZBib(true);
-    await this.refreshGlobalZBib();
+    void this.refreshGlobalZBib().catch((error) => {
+      console.error('Error refreshing bibliography from Zotero', error);
+    });
   }
 
   async loadGlobalZBib(fromCache?: boolean) {
@@ -458,8 +459,11 @@ export class BibManager {
     this.plugin.saveSettings();
 
     this.bibCache = new Map();
+    this.zCitekeyToLinks.clear();
+    this.zCitekeyToPDFLinks.clear();
     for (const entry of bib) {
       this.bibCache.set(entry.id, entry);
+      this.cacheZoteroLink(entry);
     }
 
     this.setFuse(bib);
@@ -513,6 +517,7 @@ export class BibManager {
         for (const [k, v] of res.modified.entries()) {
           modifiedEntries.set(k, v);
           this.bibCache.set(k, v);
+          this.cacheZoteroLink(v);
         }
       } catch (e) {
         console.error('Error fetching bibliography from Zotero', e);
@@ -801,9 +806,6 @@ export class BibManager {
       : null;
 
     if (parsed) {
-      if (this.plugin.settings.pullFromZotero && !settings?.bibliography) {
-        await this.getZLinksForKeys(resolvedKeys);
-      }
       parsed = this.prepBibHTML(parsed, file);
     }
 
@@ -824,53 +826,27 @@ export class BibManager {
     return result.bib;
   }
 
-  async getZLinksForKeys(citekeys: Set<string>) {
-    const queries: Record<number, string[]> = {};
+  private cacheZoteroLink(entry: PartialCSLEntry) {
+    const zoteroEntry = entry as PartialCSLEntry & {
+      zoteroKey?: unknown;
+      zoteroAttachmentKey?: unknown;
+    };
+    const zoteroKey = zoteroEntry.zoteroKey;
+    if (typeof zoteroKey !== 'string' || !entry.id) return;
 
-    citekeys.forEach((key) => {
-      if (!this.zCitekeyToLinks.has(key)) {
-        if (!this.bibCache.has(key)) return;
-        const item = this.bibCache.get(key);
-        const id = item.groupID;
-        if (id === undefined) return;
-        if (!queries[id]) {
-          queries[id] = [];
-        }
-        queries[id].push(key);
-      }
-    });
+    const groupId = entry.groupID;
+    const link =
+      groupId === 1
+        ? `zotero://select/library/items/${zoteroKey}`
+        : `zotero://select/groups/${groupId}/items/${zoteroKey}`;
+    this.zCitekeyToLinks.set(entry.id, link);
 
-    for (const id of Object.keys(queries)) {
-      const groupId = Number(id);
-      try {
-        const items = await getItemJSONFromCiteKeys(
-          this.plugin.settings.zoteroPort,
-          queries[groupId],
-          groupId
-        );
-        if (items?.length) {
-          for (const item of items) {
-            const key = item.citekey || item.citationKey;
-            const link = item.select;
-            if (key && link) {
-              this.zCitekeyToLinks.set(key, link);
-              if (item.attachments?.length) {
-                const attLinks: string[] = [];
-                for (const att of item.attachments) {
-                  if (/\.pdf$/.test(att.path)) {
-                    attLinks.push(att.path);
-                  }
-                }
-                if (attLinks.length) {
-                  this.zCitekeyToPDFLinks.set(key, attLinks);
-                }
-              }
-            }
-          }
-        }
-      } catch {
-        //
-      }
+    if (typeof zoteroEntry.zoteroAttachmentKey === 'string') {
+      const attachmentLink =
+        groupId === 1
+          ? `zotero://open-pdf/library/items/${zoteroEntry.zoteroAttachmentKey}`
+          : `zotero://open-pdf/groups/${groupId}/items/${zoteroEntry.zoteroAttachmentKey}`;
+      this.zCitekeyToPDFLinks.set(entry.id, [attachmentLink]);
     }
   }
 
@@ -939,9 +915,9 @@ export class BibManager {
             zPDFLinks.forEach((link) => {
               div.createDiv('clickable-icon', (div) => {
                 setIcon(div, 'lucide-file-text');
-                div.setAttr('aria-label', path.parse(link).base);
+                div.setAttr('aria-label', t('Open file in Zotero'));
                 div.onClickEvent(() => {
-                  activeWindow.open(`file://${encodeURI(link)}`, '_blank');
+                  activeWindow.open(link, '_blank');
                 });
               });
             });

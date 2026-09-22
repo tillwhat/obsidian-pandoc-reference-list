@@ -127,6 +127,7 @@ body {
 
 .pwc-tooltip .csl-entry-wrapper {
   padding: 0;
+  min-width: 0;
 }
 
 .csl-entry {
@@ -205,7 +206,7 @@ body {
 }
 
 .pwc-tooltip {
-  word-wrap: break-word;
+  overflow-wrap: anywhere;
   position: fixed;
   font-family: var(--font-interface);
   font-size: var(--pwc-tooltip-font-size);
@@ -214,11 +215,14 @@ body {
   border: 1px solid var(--background-modifier-border);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   border-radius: 6px;
-  width: 95vw;
-  max-width: 300px;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 20px));
+  min-width: 0;
+  max-height: calc(100vh - 20px);
+  box-sizing: border-box;
   line-height: 1.4;
   z-index: var(--layer-popover);
-  overflow: hidden;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: var(--size-4-2);
@@ -227,6 +231,18 @@ body {
 
 .pwc-tooltip .csl-entry {
   padding: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.pwc-tooltip .csl-entry > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pwc-tooltip .pwc-entry-btns {
+  flex: 0 0 auto;
 }
 
 .pwc-tooltips .cm-hmd-barelink {

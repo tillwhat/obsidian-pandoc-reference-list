@@ -97,15 +97,22 @@ export class TooltipManager {
     el.win.setTimeout(() => {
       const viewport = el.win.visualViewport;
       const divRect = tooltip.getBoundingClientRect();
+      const viewportWidth = viewport?.width ?? el.win.innerWidth;
+      const viewportHeight = viewport?.height ?? el.win.innerHeight;
+      const margin = 10;
+      const left = Math.min(
+        Math.max(margin, rect.x),
+        viewportWidth - divRect.width - margin
+      );
+      const below = rect.bottom + 5;
+      const above = rect.top - divRect.height - 5;
+      const top =
+        below + divRect.height + margin <= viewportHeight
+          ? below
+          : Math.max(margin, above);
 
-      tooltip.style.left =
-        rect.x + divRect.width + 10 > viewport.width
-          ? `${rect.x - (rect.x + divRect.width + 10 - viewport.width)}px`
-          : `${rect.x}px`;
-      tooltip.style.top =
-        rect.bottom + divRect.height + 10 > viewport.height
-          ? `${rect.y - divRect.height - 5}px`
-          : `${rect.bottom + 5}px`;
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
     });
 
     this.isScrollBound = true;

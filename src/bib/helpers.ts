@@ -213,42 +213,43 @@ async function requestZotero(
 export async function getZUserGroups(
   port: string = DEFAULT_ZOTERO_PORT
 ): Promise<Array<{ id: number; name: string }>> {
-  const body = JSON.stringify({
-    jsonrpc: '2.0',
-    method: 'user.groups',
-  });
-
   try {
-    const response = await requestZotero(port, '/better-bibtex/json-rpc', {
-      method: 'POST',
-      headers: { 'Content-Length': Buffer.byteLength(body).toString() },
-      body,
-    });
+    const response = await requestZotero(port, '/api/users/0/groups');
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const result = JSON.parse(response.body);
-    return result.result as Array<{ id: number; name: string }>;
+    const groups = JSON.parse(response.body) as Array<{
+      id?: number;
+      name?: string;
+      data?: {
+        id?: number;
+        name?: string;
+      };
+    }>;
+    if (!Array.isArray(groups)) {
+      throw new Error('Zotero local API returned an invalid group list.');
+    }
+
+    const userGroups = groups.map((group) => ({
+      id: group.data?.id ?? group.id,
+      name: group.data?.name ?? group.name,
+    }));
+    if (
+      userGroups.some(
+        (group) =>
+          typeof group.id !== 'number' || typeof group.name !== 'string'
+      )
+    ) {
+      throw new Error('Zotero local API returned an invalid group.');
+    }
+
+    return [{ id: 1, name: 'My Library' }, ...userGroups];
   } catch (e) {
     console.error('Error connecting to Zotero:', e);
     throw new Error(`Error connecting to Zotero: ${e}`);
   }
-}
-
-function panNum(n: number) {
-  if (n < 10) return `0${n}`;
-  return n.toString();
-}
-
-function timestampToZDate(ts: number) {
-  const d = new Date(ts);
-  return `${d.getUTCFullYear()}-${panNum(d.getUTCMonth() + 1)}-${panNum(
-    d.getUTCDate()
-  )} ${panNum(d.getUTCHours())}:${panNum(d.getUTCMinutes())}:${panNum(
-    d.getUTCSeconds()
-  )}`;
 }
 
 export async function getZModified(
@@ -258,25 +259,25 @@ export async function getZModified(
 ): Promise<CSLList> {
   if (!(await isZoteroRunning(port))) return null;
 
-  const body = JSON.stringify({
-    jsonrpc: '2.0',
-    method: 'item.search',
-    params: [[['dateModified', 'isAfter', timestampToZDate(since)]], groupId],
-  });
+  const libraryPath =
+    groupId === 1 ? '/api/users/0/items' : `/api/groups/${groupId}/items`;
 
   try {
-    const response = await requestZotero(port, '/better-bibtex/json-rpc', {
-      method: 'POST',
-      headers: { 'Content-Length': Buffer.byteLength(body).toString() },
-      body,
-    });
+    const response = await requestZotero(port, `${libraryPath}?format=json`);
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const result = JSON.parse(response.body);
-    return result.result as CSLList;
+    const allItems = JSON.parse(response.body) as ZoteroItem[];
+    const modifiedItems = allItems.filter(
+      (item) =>
+        item.data?.dateModified && Date.parse(item.data.dateModified) > since
+    );
+
+    return modifiedItems
+      .filter((item) => item.data?.citationKey && item.data.title)
+      .map((item) => toCSLEntry(item.data, groupId, item.key));
   } catch (e) {
     console.error('Error connecting to Zotero:', e);
     return null;
@@ -295,10 +296,18 @@ export async function getZBib(
   ensureDir(cacheDir);
   if (loadCached || !isRunning) {
     if (fs.existsSync(cached)) {
-      return applyGroupID(
-        JSON.parse(fs.readFileSync(cached).toString()) as CSLList,
-        groupId
-      );
+      const cachedList = JSON.parse(
+        fs.readFileSync(cached).toString()
+      ) as CSLList;
+      if (
+        cachedList.every(
+          (item) =>
+            typeof (item as ZoteroCSLEntry).zoteroKey === 'string' &&
+            (item as ZoteroCSLEntry).zoteroAttachmentsLoaded === true
+        )
+      ) {
+        return applyGroupID(cachedList, groupId);
+      }
     }
     if (!isRunning) {
       return null;
@@ -317,6 +326,7 @@ export async function getZBib(
 
 async function getZoteroItems(port: string, groupId: number): Promise<CSLList> {
   const items: CSLList = [];
+  const firstAttachments = new Map<string, string>();
   const limit = 100;
   let start = 0;
 
@@ -337,8 +347,37 @@ async function getZoteroItems(port: string, groupId: number): Promise<CSLList> {
     }
 
     for (const item of page) {
+      const parentItem = item.data?.parentItem;
+      if (
+        item.key &&
+        item.data?.itemType === 'attachment' &&
+        typeof parentItem === 'string' &&
+        !firstAttachments.has(parentItem)
+      ) {
+        firstAttachments.set(parentItem, item.key);
+      }
+    }
+
+    for (const item of page) {
       if (!item.data?.citationKey || !item.data.title) continue;
-      items.push(toCSLEntry(item.data, groupId));
+      items.push(
+        toCSLEntry(
+          item.data,
+          groupId,
+          item.key,
+          firstAttachments.get(item.key)
+        )
+      );
+    }
+
+    for (const entry of items) {
+      const zoteroKey = (entry as ZoteroCSLEntry).zoteroKey;
+      if (zoteroKey) {
+        const attachmentKey = firstAttachments.get(zoteroKey);
+        if (attachmentKey) {
+          (entry as ZoteroCSLEntry).zoteroAttachmentKey = attachmentKey;
+        }
+      }
     }
 
     if (page.length < limit) break;
@@ -349,12 +388,15 @@ async function getZoteroItems(port: string, groupId: number): Promise<CSLList> {
 }
 
 interface ZoteroItem {
+  key?: string;
   data?: {
     citationKey?: string;
     title?: string;
     abstractNote?: string;
     itemType?: string;
+    parentItem?: string;
     date?: string;
+    dateModified?: string;
     creators?: Array<{
       creatorType?: string;
       firstName?: string;
@@ -366,18 +408,26 @@ interface ZoteroItem {
 }
 
 interface ZoteroCSLEntry extends PartialCSLEntry {
+  zoteroKey?: string;
+  zoteroAttachmentKey?: string;
+  zoteroAttachmentsLoaded?: boolean;
   [key: string]: unknown;
 }
 
 function toCSLEntry(
   data: NonNullable<ZoteroItem['data']>,
-  groupId: number
+  groupId: number,
+  zoteroKey?: string,
+  zoteroAttachmentKey?: string
 ): ZoteroCSLEntry {
   const entry: ZoteroCSLEntry = {
     ...(data as unknown as Record<string, unknown>),
     id: data.citationKey,
     title: data.title,
     groupID: groupId,
+    zoteroKey,
+    zoteroAttachmentKey,
+    zoteroAttachmentsLoaded: true,
   };
 
   if (data.abstractNote) entry.abstract = data.abstractNote;
@@ -421,7 +471,7 @@ export async function refreshZBib(
   const newKeys: Set<string> = new Set();
 
   for (const mod of mList) {
-    mod.id = (mod as any).citekey || (mod as any)['citation-key'];
+    mod.id = mod.id || (mod as any).citationKey;
     if (!mod.id) continue;
     modified.set(mod.id, mod);
     newKeys.add(mod.id);
@@ -432,8 +482,20 @@ export async function refreshZBib(
   for (let i = 0; i < list.length; i++) {
     const item = list[i];
     if (modified.has(item.id)) {
-      newKeys.delete(item.id);
-      list[i] = modified.get(item.id);
+      const replacement = modified.get(item.id);
+      if (replacement) {
+        const oldAttachment = (item as ZoteroCSLEntry).zoteroAttachmentKey;
+        if (
+          typeof oldAttachment === 'string' &&
+          typeof (replacement as ZoteroCSLEntry).zoteroAttachmentKey !==
+            'string'
+        ) {
+          (replacement as ZoteroCSLEntry).zoteroAttachmentKey = oldAttachment;
+          (replacement as ZoteroCSLEntry).zoteroAttachmentsLoaded = true;
+        }
+        newKeys.delete(item.id);
+        list[i] = replacement;
+      }
     }
   }
 
@@ -452,21 +514,12 @@ export async function refreshZBib(
 export async function isZoteroRunning(port: string = DEFAULT_ZOTERO_PORT) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await requestZotero(
-        port,
-        '/better-bibtex/cayw?probe=true',
-        {},
-        2000
-      );
-      if (
-        response.status >= 200 &&
-        response.status < 300 &&
-        response.body.trim() === 'ready'
-      ) {
+      const response = await requestZotero(port, '/api/', {}, 2000);
+      if (response.status >= 200 && response.status < 300) {
         return true;
       }
     } catch {
-      // Better BibTeX can briefly close the probe connection while starting.
+      // Connection may be briefly unavailable while Zotero is starting.
     }
 
     if (attempt < 2) {
@@ -475,53 +528,6 @@ export async function isZoteroRunning(port: string = DEFAULT_ZOTERO_PORT) {
   }
 
   return false;
-}
-
-export async function getItemJSONFromCiteKeys(
-  port: string = DEFAULT_ZOTERO_PORT,
-  citeKeys: string[],
-  libraryID: number
-) {
-  if (!(await isZoteroRunning(port))) return null;
-
-  let res: any;
-
-  try {
-    const body = JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'item.export',
-      params: [citeKeys, '36a3b0b5-bad0-4a04-b79b-441c7cef77db', libraryID],
-    });
-
-    const response = await requestZotero(port, '/better-bibtex/json-rpc', {
-      method: 'POST',
-      headers: { 'Content-Length': Buffer.byteLength(body).toString() },
-      body,
-    });
-
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    res = JSON.parse(response.body);
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
-
-  try {
-    if (res.error?.message) {
-      console.error(new Error(res.error.message));
-      return null;
-    }
-
-    return Array.isArray(res.result)
-      ? JSON.parse(res.result[2]).items
-      : JSON.parse(res.result).items;
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
 }
 
 function applyGroupID(list: CSLList, groupId: number) {

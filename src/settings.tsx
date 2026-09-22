@@ -225,7 +225,7 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
           {
             name: t('Pull bibliography from Zotero'),
             desc: t(
-              'When enabled, bibliography data will be pulled from Zotero rather than a bibliography file. The Better Bibtex plugin must be installed in Zotero.'
+              'When enabled, bibliography data will be pulled from Zotero rather than a bibliography file.'
             ),
             render: (setting: Setting) => {
               setting.addToggle((toggle) =>
@@ -314,136 +314,142 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
         ],
       },
       {
-        name: t('Citation style'),
-        render: (setting: Setting) => {
-          const selected = cslListRaw.find(
-            (item) => item.value === this.plugin.settings.cslStyleURL
-          );
-          setting.addSearch((search) => {
-            search
-              .setPlaceholder(t('Search...'))
-              .setValue(selected?.label ?? '')
-              .onChange((value) => {
-                if (!value) {
-                  this.plugin.settings.cslStyleURL = undefined;
-                  void this.plugin.saveSettings(() =>
-                    this.plugin.bibManager.reinit(false)
-                  );
-                }
-              });
-            new OptionSuggest(
-              this.plugin.app,
-              search.inputEl,
-              (query) =>
-                cslList.search(query).map((result) => ({
-                  label: result.item.label,
-                  value: result.item.value,
-                })),
-              (option) => {
-                this.plugin.settings.cslStyleURL = option.value;
-                void this.plugin.saveSettings(() =>
-                  this.plugin.bibManager.reinit(false)
+        type: 'group',
+        heading: t('Citation settings'),
+        items: [
+          {
+            name: t('Citation style'),
+            render: (setting: Setting) => {
+              const selected = cslListRaw.find(
+                (item) => item.value === this.plugin.settings.cslStyleURL
+              );
+              setting.addSearch((search) => {
+                search
+                  .setPlaceholder(t('Search...'))
+                  .setValue(selected?.label ?? '')
+                  .onChange((value) => {
+                    if (!value) {
+                      this.plugin.settings.cslStyleURL = undefined;
+                      void this.plugin.saveSettings(() =>
+                        this.plugin.bibManager.reinit(false)
+                      );
+                    }
+                  });
+                new OptionSuggest(
+                  this.plugin.app,
+                  search.inputEl,
+                  (query) =>
+                    cslList.search(query).map((result) => ({
+                      label: result.item.label,
+                      value: result.item.value,
+                    })),
+                  (option) => {
+                    this.plugin.settings.cslStyleURL = option.value;
+                    void this.plugin.saveSettings(() =>
+                      this.plugin.bibManager.reinit(false)
+                    );
+                  }
                 );
-              }
-            );
-          });
-        },
-      },
-      {
-        name: t('Custom citation style'),
-        desc: t(
-          'Path to a CSL file. This can be an absolute path or one relative to your vault. This will override the style selected above. This can be overridden on a per-file basis by setting "csl" or "citation-style" in the file\'s frontmatter. A URL can be supplied when setting the style via frontmatter.'
-        ),
-        ...renderTextSetting('cslStylePath', () =>
-          this.plugin.bibManager.reinit(false)
-        ),
-      },
-      {
-        name: t('Citation style language'),
-        desc: t(
-          'This can be overridden on a per-file basis by setting "lang" or "citation-language" in the file\'s frontmatter. A language code must be used when setting the language via frontmatter.'
-        ),
-        render: (setting: Setting) => {
-          const selected = langListRaw.find(
-            (item) => item.value === this.plugin.settings.cslLang
-          );
-          setting.addSearch((search) => {
-            search
-              .setPlaceholder(t('Search...'))
-              .setValue(selected?.label ?? '')
-              .onChange((value) => {
-                if (!value) {
-                  this.plugin.settings.cslLang = undefined;
-                  void this.plugin.saveSettings(() =>
-                    this.plugin.bibManager.reinit(false)
-                  );
-                }
               });
-            new OptionSuggest(
-              this.plugin.app,
-              search.inputEl,
-              (query) =>
-                langList.search(query).map((result) => ({
-                  label: result.item.label,
-                  value: result.item.value,
-                })),
-              (option) => {
-                this.plugin.settings.cslLang = option.value;
-                void this.plugin.saveSettings(() =>
-                  this.plugin.bibManager.reinit(false)
+            },
+          },
+          {
+            name: t('Custom citation style'),
+            desc: t(
+              'Path to a CSL file. This can be an absolute path or one relative to your vault. This will override the style selected above. This can be overridden on a per-file basis by setting "csl" or "citation-style" in the file\'s frontmatter. A URL can be supplied when setting the style via frontmatter.'
+            ),
+            ...renderTextSetting('cslStylePath', () =>
+              this.plugin.bibManager.reinit(false)
+            ),
+          },
+          {
+            name: t('Citation style language'),
+            desc: t(
+              'This can be overridden on a per-file basis by setting "lang" or "citation-language" in the file\'s frontmatter. A language code must be used when setting the language via frontmatter.'
+            ),
+            render: (setting: Setting) => {
+              const selected = langListRaw.find(
+                (item) => item.value === this.plugin.settings.cslLang
+              );
+              setting.addSearch((search) => {
+                search
+                  .setPlaceholder(t('Search...'))
+                  .setValue(selected?.label ?? '')
+                  .onChange((value) => {
+                    if (!value) {
+                      this.plugin.settings.cslLang = undefined;
+                      void this.plugin.saveSettings(() =>
+                        this.plugin.bibManager.reinit(false)
+                      );
+                    }
+                  });
+                new OptionSuggest(
+                  this.plugin.app,
+                  search.inputEl,
+                  (query) =>
+                    langList.search(query).map((result) => ({
+                      label: result.item.label,
+                      value: result.item.value,
+                    })),
+                  (option) => {
+                    this.plugin.settings.cslLang = option.value;
+                    void this.plugin.saveSettings(() =>
+                      this.plugin.bibManager.reinit(false)
+                    );
+                  }
                 );
-              }
-            );
-          });
-        },
-      },
-      {
-        name: t('Hide links in references'),
-        desc: t('Replace links with link icons to save space.'),
-        ...renderToggleSetting('hideLinks'),
-      },
-      {
-        name: t('Render live preview inline citations'),
-        desc: t(
-          'Convert [@pandoc] citations to formatted inline citations in live preview mode.'
-        ),
-        ...renderToggleSetting('renderCitations'),
-      },
-      {
-        name: t('Render reading mode inline citations'),
-        desc: t(
-          'Convert [@pandoc] citations to formatted inline citations in reading mode.'
-        ),
-        ...renderToggleSetting('renderCitationsReadingMode'),
-      },
-      {
-        name: t('Process citations in links'),
-        desc: t(
-          'Include [[@pandoc]] citations in the reference list and format them as inline citations in live preview mode.'
-        ),
-        ...renderToggleSetting('renderLinkCitations'),
-      },
-      {
-        name: t('Show citekey suggestions'),
-        desc: t(
-          'When enabled, an autocomplete dialog will display when typing citation keys.'
-        ),
-        ...renderToggleSetting('enableCiteKeyCompletion'),
-      },
-      {
-        name: t('Show citekey tooltips'),
-        desc: t(
-          'When enabled, hovering over citekeys will open a tooltip containing a formatted citation.'
-        ),
-        ...renderToggleSetting('showCitekeyTooltips'),
-      },
-      {
-        name: t('Tooltip delay'),
-        desc: t(
-          'Set the amount of time (in milliseconds) to wait before displaying tooltips.'
-        ),
-        ...renderSliderSetting,
-      },
+              });
+            },
+          },
+          {
+            name: t('Hide links in references'),
+            desc: t('Replace links with link icons to save space.'),
+            ...renderToggleSetting('hideLinks'),
+          },
+          {
+            name: t('Render live preview inline citations'),
+            desc: t(
+              'Convert [@pandoc] citations to formatted inline citations in live preview mode.'
+            ),
+            ...renderToggleSetting('renderCitations'),
+          },
+          {
+            name: t('Render reading mode inline citations'),
+            desc: t(
+              'Convert [@pandoc] citations to formatted inline citations in reading mode.'
+            ),
+            ...renderToggleSetting('renderCitationsReadingMode'),
+          },
+          {
+            name: t('Process citations in links'),
+            desc: t(
+              'Include [[@pandoc]] citations in the reference list and format them as inline citations in live preview mode.'
+            ),
+            ...renderToggleSetting('renderLinkCitations'),
+          },
+          {
+            name: t('Show citekey suggestions'),
+            desc: t(
+              'When enabled, an autocomplete dialog will display when typing citation keys.'
+            ),
+            ...renderToggleSetting('enableCiteKeyCompletion'),
+          },
+          {
+            name: t('Show citekey tooltips'),
+            desc: t(
+              'When enabled, hovering over citekeys will open a tooltip containing a formatted citation.'
+            ),
+            ...renderToggleSetting('showCitekeyTooltips'),
+          },
+          {
+            name: t('Tooltip delay'),
+            desc: t(
+              'Set the amount of time (in milliseconds) to wait before displaying tooltips.'
+            ),
+            ...renderSliderSetting,
+          },
+        ]
+      }
     ];
   }
 }

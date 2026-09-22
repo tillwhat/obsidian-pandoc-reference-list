@@ -1,3 +1,4 @@
+import { getLanguage } from 'obsidian';
 import ar from './locale/ar';
 import cz from './locale/cz';
 import da from './locale/da';
@@ -19,13 +20,13 @@ import ro from './locale/ro';
 import ru from './locale/ru';
 import sq from './locale/sq';
 import tr from './locale/tr';
-import uk from './locale/tr';
+import uk from './locale/uk';
 import zhCN from './locale/zh-cn';
 import zhTW from './locale/zh-tw';
 
-const localeMap: { [k: string]: Partial<typeof en> } = {
+const localeMap: Record<string, Partial<typeof en>> = {
   ar,
-  cz,
+  cs: cz,
   da,
   de,
   en,
@@ -46,17 +47,12 @@ const localeMap: { [k: string]: Partial<typeof en> } = {
   sq,
   tr,
   uk,
+  'zh-CN': zhCN,
   'zh-TW': zhTW,
-  zh: zhCN,
 };
 
-const lang = window.localStorage.getItem('language');
-const locale = localeMap[lang || 'en'];
+const locale = localeMap[getLanguage()] ?? en;
 
 export function t(str: keyof typeof en): string {
-  if (!locale) {
-    console.error('Error: locale not found', lang);
-  }
-
-  return (locale && locale[str]) || en[str];
+  return locale[str] || en[str];
 }
