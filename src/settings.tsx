@@ -2,6 +2,7 @@ import {
   AbstractInputSuggest,
   Notice,
   PluginSettingTab,
+  Platform,
   Setting,
   SettingDefinitionItem,
   SettingDefinitionRender,
@@ -12,7 +13,6 @@ import ReferenceList from './main';
 import { DEFAULT_ZOTERO_PORT, getZUserGroups } from './bib/helpers';
 import { cslList, cslListRaw } from './bib/cslList';
 import { langList, langListRaw } from './bib/cslLangList';
-import { findExecutable } from './helpers';
 
 interface SearchOption {
   label: string;
@@ -171,9 +171,12 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
       },
     };
 
+    const desktopOnly = () => !Platform.isMobile;
+
     return [
       {
         name: t('Fallback path to Pandoc'),
+        visible: desktopOnly,
         desc: t(
           "The absolute path to the Pandoc executable. This plugin will attempt to locate pandoc for you and will use this path if it fails to do so. To find pandoc, use the output of 'which pandoc' in a terminal on Mac/Linux or 'Get-Command pandoc' in powershell on Windows."
         ),
@@ -194,6 +197,8 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
               .setTooltip(t('Attempt to find Pandoc automatically'))
               .onClick(async () => {
                 try {
+                  if (Platform.isMobile) return;
+                  const { findExecutable } = await import('./desktopHelpers');
                   const pathToPandoc = findExecutable('pandoc');
                   if (!pathToPandoc) throw new Error('Pandoc was not found.');
                   input.setValue(pathToPandoc);
@@ -213,6 +218,7 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
       },
       {
         name: t('Path to bibliography file'),
+        visible: desktopOnly,
         desc: t(
           'The absolute path to your desired bibliography file. This can be overridden on a per-file basis by setting "bibliography" in the file\'s frontmatter.'
         ),
@@ -227,6 +233,7 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
         items: [
           {
             name: t('Pull bibliography from Zotero'),
+            visible: desktopOnly,
             desc: t(
               'When enabled, bibliography data will be pulled from Zotero rather than a bibliography file.'
             ),
@@ -259,7 +266,7 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
           {
             name: t('Cannot connect to Zotero'),
             desc: t('Start Zotero and try again.'),
-            visible: () => !this.zoteroConnected,
+            visible: () => desktopOnly() && !this.zoteroConnected,
             render: (setting: Setting) => {
               setting.addButton((button) =>
                 button
@@ -274,7 +281,7 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
             desc: t(
               "Use 24119 for Juris-M or specify a custom port if you have changed Zotero's default."
             ),
-            visible: () => !!this.plugin.settings.pullFromZotero,
+            visible: () => desktopOnly() && !!this.plugin.settings.pullFromZotero,
             render: (setting: Setting) => {
               setting.addText((text) =>
                 text
@@ -292,7 +299,9 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
           ...this.zoteroGroups.map((group) => ({
             name: group.name,
             visible: () =>
-              !!this.plugin.settings.pullFromZotero && this.zoteroConnected,
+              desktopOnly() &&
+              !!this.plugin.settings.pullFromZotero &&
+              this.zoteroConnected,
             render: (setting: Setting) => {
               setting.addToggle((toggle) =>
                 toggle

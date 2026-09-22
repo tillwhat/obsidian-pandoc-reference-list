@@ -83,6 +83,9 @@ do not commit them. The tag-triggered release workflow builds and publishes
   bibliography and LRU per-file cache; watches bibliography files; and
   integrates with the local Zotero API. Bibliography, style, and locale
   resources may be overridden per file.
+- Mobile support uses the validated, vault-backed cache in
+  `src/mobileCache.ts`. Desktop-only Pandoc, Zotero, filesystem, and executable
+  providers live behind dynamic imports; mobile must never load those providers.
 - `src/parser/parser.ts` parses Pandoc citation syntax into typed segments and
   groups, including locators, prefixes/suffixes, suppressors, explicit
   locators, and links. `src/parser/citeproc.ts` adapts groups to citeproc.

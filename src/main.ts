@@ -3,6 +3,7 @@ import {
   MarkdownView,
   Menu,
   Plugin,
+  Platform,
   WorkspaceLeaf,
   debounce,
   setIcon,
@@ -22,11 +23,9 @@ import {
 } from './settings';
 import { TooltipManager } from './tooltip';
 import { ReferenceListView, viewType } from './view';
-import { PromiseCapability, findExecutable, fixPath, getVaultRoot } from './helpers';
-import path from 'node:path';
+import { PromiseCapability, getVaultRoot } from './helpers';
 import { BibManager } from './bib/bibManager';
 import { CiteSuggest } from './citeSuggest/citeSuggest';
-import { isZoteroRunning } from './bib/helpers';
 
 export default class ReferenceList extends Plugin {
   settings: ReferenceListSettings;
@@ -53,12 +52,14 @@ export default class ReferenceList extends Plugin {
       (leaf: WorkspaceLeaf) => new ReferenceListView(leaf, this)
     );
 
-    this.cacheDir = path.join(getVaultRoot(), '.pandoc');
+    this.cacheDir = Platform.isMobile ? '.pandoc' : `${getVaultRoot()}/.pandoc`;
     this.emitter = new Events();
     this.bibManager = new BibManager(this);
     this.initPromise.promise
       .then(() => {
-        if (this.settings.pullFromZotero) {
+        if (Platform.isMobile) {
+          return this.bibManager.loadMobileCache();
+        } else if (this.settings.pullFromZotero) {
           return this.bibManager.loadAndRefreshGlobalZBib();
         } else {
           return this.bibManager.loadGlobalBibFile();
@@ -68,7 +69,7 @@ export default class ReferenceList extends Plugin {
 
     const settingsTab = new ReferenceListSettingsTab(this);
     this.addSettingTab(settingsTab);
-    if (this.settings.pullFromZotero) {
+    if (!Platform.isMobile && this.settings.pullFromZotero) {
       void settingsTab.refreshZoteroGroups();
     }
     this.registerEditorSuggest(new CiteSuggest(app, this));
@@ -82,7 +83,11 @@ export default class ReferenceList extends Plugin {
     ]);
 
     // No need to block execution
-    fixPath().then(async () => {
+    if (Platform.isMobile) {
+      this.initPromise.resolve();
+    } else {
+      import('./desktopHelpers').then(({ fixPath, findExecutable }) =>
+        fixPath().then(async () => {
       if (!this.settings.pathToPandoc) {
         try {
           // Attempt to find if/where pandoc is located on the user's machine
@@ -95,9 +100,11 @@ export default class ReferenceList extends Plugin {
         }
       }
 
-      this.initPromise.resolve();
-      this.app.workspace.trigger('parse-style-settings');
-    });
+          this.initPromise.resolve();
+          this.app.workspace.trigger('parse-style-settings');
+        })
+      );
+    }
 
     this.addCommand({
       id: 'focus-reference-list-view',
@@ -160,13 +167,15 @@ export default class ReferenceList extends Plugin {
     );
 
     (async () => {
-      this.initStatusBar();
-      this.setStatusBarLoading();
+      if (!Platform.isMobile) {
+        this.initStatusBar();
+        this.setStatusBarLoading();
+      }
 
       await this.initPromise.promise;
       await this.bibManager.initPromise.promise;
 
-      this.setStatusBarIdle();
+      if (!Platform.isMobile) this.setStatusBarIdle();
       this.processReferences();
     })();
   }
@@ -353,7 +362,11 @@ export default class ReferenceList extends Plugin {
   processReferences = async () => {
     const { settings, view } = this;
     if (!this.bibManager) return;
-    if (!settings.pathToBibliography && !settings.pullFromZotero) {
+    if (
+      !Platform.isMobile &&
+      !settings.pathToBibliography &&
+      !settings.pullFromZotero
+    ) {
       return view?.setMessage(
         t(
           'Please check your Pandoc Reference List plugin settings.'
@@ -375,7 +388,9 @@ export default class ReferenceList extends Plugin {
           !bib &&
           cache?.source === this.bibManager &&
           settings.pullFromZotero &&
-          !(await isZoteroRunning(settings.zoteroPort)) &&
+          !(await import('./bib/helpers').then(({ isZoteroRunning }) =>
+            isZoteroRunning(settings.zoteroPort)
+          )) &&
           this.bibManager.fileCache.get(activeView.file)?.keys.size
         ) {
           view?.setMessage(t('Cannot connect to Zotero'));

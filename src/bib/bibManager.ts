@@ -26,8 +26,8 @@ import { Keymap, MarkdownView, TFile, setIcon } from 'obsidian';
 import { cite } from 'src/parser/citeproc';
 import { setCiteKeyCache } from 'src/editorExtension';
 import { t } from 'src/lang/helpers';
-import path from 'node:path';
-import { FSWatcher, watch, existsSync } from 'node:fs';
+import { Platform } from 'obsidian';
+import { readMobileCache, writeMobileCache } from 'src/mobileCache';
 
 const fuseSettings = {
   includeMatches: true,
@@ -117,7 +117,7 @@ export interface FileCache {
   };
 }
 
-function getScopedSettings(file: TFile): ScopedSettings {
+async function getScopedSettings(file: TFile): Promise<ScopedSettings> {
   const metadata = app.metadataCache.getFileCache(file);
   const output: ScopedSettings = {};
 
@@ -142,16 +142,9 @@ function getScopedSettings(file: TFile): ScopedSettings {
   }
 
   // Checks whether the bibliography is a relative path and replaces the path with an absolute one
-  if (
-    existsSync(
-      path.join(getVaultRoot(), path.dirname(file.path), output.bibliography)
-    )
-  ) {
-    output.bibliography = path.join(
-      getVaultRoot(),
-      path.dirname(file.path),
-      output.bibliography
-    );
+  const relativePath = `${file.path.slice(0, file.path.lastIndexOf('/'))}/${output.bibliography}`;
+  if (await app.vault.adapter.exists(relativePath)) {
+    output.bibliography = relativePath;
   }
 
   return output;
@@ -208,7 +201,7 @@ export class BibManager {
   zCitekeyToLinks: Map<string, string> = new Map();
   zCitekeyToPDFLinks: Map<string, string[]> = new Map();
 
-  watcherCache: Map<string, FSWatcher> = new Map();
+  watcherCache: Map<string, { close: () => void }> = new Map();
 
   constructor(plugin: ReferenceList) {
     this.plugin = plugin;
@@ -252,7 +245,9 @@ export class BibManager {
     this.fileCache.clear();
     if (clearCache) this.bibCache.clear();
 
-    if (this.plugin.settings.pullFromZotero) {
+    if (Platform.isMobile) {
+      await this.loadMobileCache();
+    } else if (this.plugin.settings.pullFromZotero) {
       await this.loadGlobalZBib(false);
     } else {
       await this.loadGlobalBibFile(true);
@@ -361,6 +356,7 @@ export class BibManager {
   }
 
   async loadGlobalBibFile(fromCache?: boolean) {
+    const desktopFs = await import('src/desktopFs');
     const { settings } = this.plugin;
 
     if (!settings.pathToBibliography) return;
@@ -378,7 +374,7 @@ export class BibManager {
         let dbTimer = 0;
         this.watcherCache.set(
           bibPath,
-          watch(bibPath, (evt) => {
+          desktopFs.watch(bibPath, (evt) => {
             if (evt === 'change') {
               clearTimeout(dbTimer);
               dbTimer = activeWindow.setTimeout(() => {
@@ -423,6 +419,57 @@ export class BibManager {
       );
     } catch (e) {
       console.error(e);
+    }
+
+    await this.writeMobileCache();
+  }
+
+  async loadMobileCache() {
+    try {
+      const cache = await readMobileCache();
+      if (!cache) return;
+
+      this.bibCache = new Map(cache.bibliography.map((entry) => [entry.id, entry]));
+      this.setFuse(cache.bibliography);
+      this.styleCache = new Map(Object.entries(cache.styles));
+      this.langCache = new Map(Object.entries(cache.locales));
+
+      const style =
+        this.plugin.settings.cslStylePath ||
+        this.plugin.settings.cslStyleURL ||
+        'https://raw.githubusercontent.com/citation-style-language/styles/master/apa.csl';
+      const lang = this.plugin.settings.cslLang || 'en-US';
+      const styleKey = this.styleCache.has(style)
+        ? style
+        : Object.keys(cache.styles)[0];
+      const langKey = this.langCache.has(lang)
+        ? lang
+        : Object.keys(cache.locales)[0];
+
+      if (!styleKey || !langKey) return;
+      this.engine = this.buildEngine(
+        langKey,
+        this.langCache,
+        styleKey,
+        this.styleCache,
+        this.bibCache
+      );
+    } catch (error) {
+      console.error('Unable to load the mobile bibliography cache:', error);
+    }
+  }
+
+  private async writeMobileCache() {
+    if (Platform.isMobile || !this.engine) return;
+
+    try {
+      await writeMobileCache(
+        Array.from(this.bibCache.values()),
+        this.styleCache,
+        this.langCache
+      );
+    } catch (error) {
+      console.error('Unable to write the mobile bibliography cache:', error);
     }
   }
 
@@ -495,6 +542,8 @@ export class BibManager {
     } catch (e) {
       console.error(e);
     }
+
+    await this.writeMobileCache();
   }
 
   async refreshGlobalZBib() {
@@ -690,7 +739,7 @@ export class BibManager {
       ? this.fileCache.get(file)
       : null;
     const citeBibMap = new Map<string, string>();
-    const settings = getScopedSettings(file);
+    const settings = Platform.isMobile ? null : await getScopedSettings(file);
 
     processed.forEach((p) =>
       p.citations.forEach((c) => {
@@ -715,12 +764,13 @@ export class BibManager {
         : await this.loadScopedEngine(settings);
 
     if (settings?.bibliography) {
+      const desktopFs = await import('src/desktopFs');
       const bibPath = getBibPath(settings.bibliography, getVaultRoot);
       if (!this.watcherCache.has(bibPath)) {
         let dbTimer = 0;
         this.watcherCache.set(
           bibPath,
-          watch(bibPath, (evt) => {
+          desktopFs.watch(bibPath, (evt) => {
             if (evt === 'change') {
               clearTimeout(dbTimer);
               dbTimer = activeWindow.setTimeout(() => {
