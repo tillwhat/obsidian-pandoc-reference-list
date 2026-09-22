@@ -40,17 +40,18 @@ export default {
   'Show citekey suggestions': 'Zitiervorschläge anzeigen',
   'When enabled, an autocomplete dialog will display when typing citation keys.':
     'Zeigt Vorschläge an wenn Citation keys eingegeben werden.',
-  'Pull bibliography from Zotero': 'Bibliography von Zotero abrufen',
+  'Pull bibliography from Zotero': 'Bibliographie von Zotero abrufen',
   'When enabled, bibliography data will be pulled from Zotero rather than a bibliography file.':
     'Literaturangaben aus Zotero statt aus einer Literaturdatei abrufen.',
   'Zotero port': 'Zotero Port',
   "Use 24119 for Juris-M or specify a custom port if you have changed Zotero's default.":
     "Nutze 24119 für Juris-M oder gib einen anderen Port an, falls du ihn in Zotero geändert hast.",
+'Reference list sidebar': 'Sidebar Literaturverzeichnis',
+  'Add or reveal the reference list in the right sidebar.':
+    'Literaturverzeichnis in der Sidebar anzeigen.',
   'Citation settings': 'Zitations-Einstellungen',
-    'Render live preview inline citations':
-    'Zitationen im Live-Preview rendern',
-  'Render reading mode inline citations':
-    'Zitationen im Lesemodus rendern',
+  'Render live preview inline citations': 'Zitationen im Live-Preview rendern',
+  'Render reading mode inline citations': 'Zitationen im Lesemodus rendern',
   'Convert [@pandoc] citations to formatted inline citations in live preview mode.':
     'Wandle [@pandoc]-Zitate im Live-Vorschau-Modus in formatierte Inline-Zitate um.',
   'Convert [@pandoc] citations to formatted inline citations in reading mode.':
@@ -70,7 +71,7 @@ export default {
   'Please check your Pandoc Reference List plugin settings.':
     'Bitte überprüfe die Einstellungen des Pandoc Reference List Plugins.',
   'Refresh bibliography': 'Bibliographie neu laden',
-  'Pandoc reference list settings': 'Pandoc reference list settings',
+  'Pandoc reference list settings': 'Pandoc Reference List Einstellungen',
   
   // src/tooltip.ts
   'No citation found for ': 'Nichts gefunden für ',

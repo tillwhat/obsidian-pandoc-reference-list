@@ -17,6 +17,78 @@ function ensureDir(dir: string) {
   }
 }
 
+const zoteroFieldMap: Record<string, string> = {
+  publicationTitle: 'container-title',
+  journalAbbreviation: 'container-title-short',
+  url: 'URL',
+  archiveLocation: 'archive_location',
+  callNumber: 'call-number',
+  collectionTitle: 'collection-title',
+  collectionNumber: 'collection-number',
+  numPages: 'number-of-pages',
+  pages: 'page',
+  place: 'publisher-place',
+  publisher: 'publisher',
+  series: 'series',
+  seriesNumber: 'number',
+  volume: 'volume',
+};
+
+const zoteroTypeMap: Record<string, string> = {
+  artwork: 'graphic',
+  audioRecording: 'song',
+  blogPost: 'post-weblog',
+  bookSection: 'chapter',
+  computerProgram: 'software',
+  conferencePaper: 'paper-conference',
+  dictionaryEntry: 'entry-dictionary',
+  document: 'article',
+  email: 'personal_communication',
+  encyclopediaArticle: 'entry-encyclopedia',
+  film: 'motion_picture',
+  journalArticle: 'article-journal',
+  magazineArticle: 'article-magazine',
+  newspaperArticle: 'article-newspaper',
+  podcast: 'speech',
+  presentation: 'speech',
+  report: 'report',
+  thesis: 'thesis',
+  tvBroadcast: 'broadcast',
+  videoRecording: 'motion_picture',
+  webpage: 'webpage',
+};
+
+function migrateCachedZoteroList(list: CSLList) {
+  let changed = false;
+  for (const item of list) {
+    const entry = item as PartialCSLEntry & Record<string, unknown>;
+    if ('version' in entry) {
+      delete entry.version;
+      changed = true;
+    }
+    for (const [zoteroField, cslField] of Object.entries(zoteroFieldMap)) {
+      if (entry[cslField] === undefined && entry[zoteroField] !== undefined) {
+        entry[cslField] = entry[zoteroField];
+        changed = true;
+      }
+    }
+    if (typeof entry.type === 'string' && zoteroTypeMap[entry.type]) {
+      entry.type = zoteroTypeMap[entry.type];
+      changed = true;
+    }
+    const dateParts = (
+      entry.issued as { 'date-parts'?: number[][] } | undefined
+    )?.['date-parts']?.[0];
+    if (dateParts?.[0] < 1000 && dateParts?.[1] >= 1000) {
+      entry.issued = {
+        'date-parts': [[dateParts[1], dateParts[0]]],
+      };
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 export function getBibPath(bibPath: string, getVaultRoot?: () => string) {
   if (!fs.existsSync(bibPath)) {
     const orig = bibPath;
@@ -169,6 +241,13 @@ export const defaultHeaders = {
   Connection: 'keep-alive',
 };
 
+function isExpectedZoteroConnectionError(error: unknown) {
+  return (
+    error instanceof Error &&
+    /timed out|ECONNREFUSED|ECONNRESET/.test(error.message)
+  );
+}
+
 async function requestZotero(
   port: string,
   endpoint: string,
@@ -247,7 +326,9 @@ export async function getZUserGroups(
 
     return [{ id: 1, name: 'My Library' }, ...userGroups];
   } catch (e) {
-    console.error('Error connecting to Zotero:', e);
+    if (!isExpectedZoteroConnectionError(e)) {
+      console.error('Error connecting to Zotero:', e);
+    }
     throw new Error(`Error connecting to Zotero: ${e}`);
   }
 }
@@ -278,8 +359,15 @@ export async function getZModified(
     return modifiedItems
       .filter((item) => item.data?.citationKey && item.data.title)
       .map((item) => toCSLEntry(item.data, groupId, item.key));
-  } catch (e) {
-    console.error('Error connecting to Zotero:', e);
+  } catch (error) {
+    if (
+      !(
+        error instanceof Error &&
+        /timed out|ECONNREFUSED|ECONNRESET/.test(error.message)
+      )
+    ) {
+      console.error('Error connecting to Zotero:', error);
+    }
     return null;
   }
 }
@@ -299,6 +387,10 @@ export async function getZBib(
       const cachedList = JSON.parse(
         fs.readFileSync(cached).toString()
       ) as CSLList;
+      const migrated = migrateCachedZoteroList(cachedList);
+      if (migrated) {
+        fs.writeFileSync(cached, JSON.stringify(cachedList));
+      }
       if (
         cachedList.every(
           (item) =>
@@ -420,8 +512,11 @@ function toCSLEntry(
   zoteroKey?: string,
   zoteroAttachmentKey?: string
 ): ZoteroCSLEntry {
+  const citationData = { ...data };
+  delete citationData.version;
+
   const entry: ZoteroCSLEntry = {
-    ...(data as unknown as Record<string, unknown>),
+    ...(citationData as unknown as Record<string, unknown>),
     id: data.citationKey,
     title: data.title,
     groupID: groupId,
@@ -430,20 +525,48 @@ function toCSLEntry(
     zoteroAttachmentsLoaded: true,
   };
 
+  for (const [zoteroField, cslField] of Object.entries(zoteroFieldMap)) {
+    const value = data[zoteroField];
+    if (value !== undefined && value !== null && value !== '') {
+      entry[cslField] = value;
+    }
+  }
+
+  if (data.DOI) entry.DOI = data.DOI;
   if (data.abstractNote) entry.abstract = data.abstractNote;
-  if (data.itemType) entry.type = data.itemType;
+  if (data.itemType) {
+    entry.type = zoteroTypeMap[data.itemType] ?? data.itemType;
+  }
   if (data.date) {
-    const year = data.date.match(/\d{4}/)?.[0];
-    if (year) entry.issued = { 'date-parts': [[Number(year)]] };
+    const date = data.date.trim();
+    const year = date.match(/(?:^|[^\d])(\d{4})(?:$|[^\d])/);
+    if (year) {
+      const dateParts = [Number(year[1])];
+      const beforeYear = date.slice(0, year.index).match(/\d{1,2}/);
+      const afterYear = date.slice(year.index + year[0].length).match(/\d{1,2}/);
+      const month = beforeYear?.[0] ?? afterYear?.[0];
+      if (month && Number(month) >= 1 && Number(month) <= 12) {
+        dateParts.push(Number(month));
+      }
+      entry.issued = { 'date-parts': [dateParts] };
+    }
   }
   if (data.creators) {
-    entry.author = data.creators
-      .filter((creator) => creator.creatorType === 'author')
-      .map((creator) =>
-        creator.name
-          ? { literal: creator.name }
-          : { family: creator.lastName, given: creator.firstName }
-      );
+    const creators = data.creators.map((creator) =>
+      creator.name
+        ? { literal: creator.name }
+        : { family: creator.lastName, given: creator.firstName }
+    );
+    entry.author = creators.filter(
+      (_, index) => data.creators[index].creatorType === 'author'
+    );
+    for (const role of ['editor', 'translator', 'director']) {
+      const roleCreators = data.creators
+        .map((creator, index) => ({ creator, value: creators[index] }))
+        .filter(({ creator }) => creator.creatorType === role)
+        .map(({ value }) => value);
+      if (roleCreators.length) entry[role] = roleCreators;
+    }
   }
 
   return entry;

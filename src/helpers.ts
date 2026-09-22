@@ -38,13 +38,20 @@ export function getVaultRoot() {
   return (app.vault.adapter as FileSystemAdapter).getBasePath();
 }
 
-export function copyElToClipboard(el: HTMLElement) {
-  // Electron is provided by Obsidian at runtime.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  require('electron').clipboard.write({
-    html: el.outerHTML,
-    text: htmlToMarkdown(el.outerHTML),
-  });
+export async function copyElToClipboard(el: HTMLElement) {
+  const html = el.outerHTML;
+  const text = htmlToMarkdown(html);
+
+  if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+    throw new Error('Clipboard access is unavailable.');
+  }
+
+  await navigator.clipboard.write([
+    new ClipboardItem({
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([text], { type: 'text/plain' }),
+    }),
+  ]);
 }
 
 export class PromiseCapability<T> {

@@ -100,15 +100,18 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
       }
       this.zoteroGroups = groups;
       const validIds = new Set(this.zoteroGroups.map((group) => group.id));
-      this.plugin.settings.zoteroGroups =
-        this.plugin.settings.zoteroGroups.filter((group) =>
+      const previousGroups = this.plugin.settings.zoteroGroups;
+      const nextGroups =
+        previousGroups.filter((group) =>
           validIds.has(group.id)
         );
+      this.plugin.settings.zoteroGroups = nextGroups;
       this.zoteroConnected = true;
-      await this.plugin.saveSettings();
-    } catch (error) {
+      if (nextGroups.length !== previousGroups.length) {
+        await this.plugin.saveSettings();
+      }
+    } catch {
       this.zoteroConnected = false;
-      console.error('Error connecting to Zotero:', error);
     }
     this.update();
   }
@@ -314,6 +317,17 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
         ],
       },
       {
+        name: t('Reference list sidebar'),
+        desc: t('Add or reveal the reference list in the right sidebar.'),
+        render: (setting: Setting) => {
+          setting.addButton((button) =>
+            button
+              .setButtonText(t('Show reference list'))
+              .onClick(() => void this.plugin.initLeaf())
+          );
+        },
+      },
+      {
         type: 'group',
         heading: t('Citation settings'),
         items: [
@@ -345,9 +359,10 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
                     })),
                   (option) => {
                     this.plugin.settings.cslStyleURL = option.value;
-                    void this.plugin.saveSettings(() =>
-                      this.plugin.bibManager.reinit(false)
-                    );
+                    void this.plugin.saveSettings(async () => {
+                      await this.plugin.bibManager.reinit(false);
+                      this.plugin.processReferences();
+                    });
                   }
                 );
               });
@@ -393,9 +408,10 @@ export class ReferenceListSettingsTab extends PluginSettingTab {
                     })),
                   (option) => {
                     this.plugin.settings.cslLang = option.value;
-                    void this.plugin.saveSettings(() =>
-                      this.plugin.bibManager.reinit(false)
-                    );
+                    void this.plugin.saveSettings(async () => {
+                      await this.plugin.bibManager.reinit(false);
+                      this.plugin.processReferences();
+                    });
                   }
                 );
               });

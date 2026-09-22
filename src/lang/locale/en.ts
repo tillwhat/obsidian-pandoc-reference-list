@@ -46,6 +46,9 @@ export default {
   'Zotero port': 'Zotero port',
   "Use 24119 for Juris-M or specify a custom port if you have changed Zotero's default.":
     "Use 24119 for Juris-M or specify a custom port if you have changed Zotero's default.",
+  'Reference list sidebar': 'Reference list sidebar',
+  'Add or reveal the reference list in the right sidebar.':
+    'Add or reveal the reference list in the right sidebar.',
   'Citation settings': 'Citation settings',
     'Render live preview inline citations':
     'Render live preview inline citations',

@@ -51,7 +51,6 @@ repository's npm scripts:
 - `npm run check-types` - TypeScript checking without emitting files.
 - `npm run lint` - lint `src`.
 - `npm run lint:fix` - apply ESLint fixes under `src`.
-- `npm run prettier` - format TypeScript and TSX files under `src`.
 - `npm test` - run the Jest suite.
 - `npm test -- src/parser/tests/parser.test.ts` - parser tests only.
 - `npm test -- src/bib/tests/bibManager.test.ts` - bibliography helper tests
@@ -156,7 +155,7 @@ built-ins, and CodeMirror packages.
 - Keep generated locale/style downloads, test-created caches, coverage, and
   build artifacts out of commits.
 - Release metadata is coordinated across `package.json`, `manifest.json`, and
-  `versions.json`; use the existing `npm run bump`/`version-bump.mjs` flow.
+  `versions.json`; use the existing `version-bump.mjs` flow.
 
 For each change:
 

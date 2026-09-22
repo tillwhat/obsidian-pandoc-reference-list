@@ -68,7 +68,9 @@ export default class ReferenceList extends Plugin {
 
     const settingsTab = new ReferenceListSettingsTab(this);
     this.addSettingTab(settingsTab);
-    void settingsTab.refreshZoteroGroups();
+    if (this.settings.pullFromZotero) {
+      void settingsTab.refreshZoteroGroups();
+    }
     this.registerEditorSuggest(new CiteSuggest(app, this));
     this.tooltipManager = new TooltipManager(this);
     this.registerMarkdownPostProcessor(processCiteKeys(this));
@@ -103,6 +105,10 @@ export default class ReferenceList extends Plugin {
       callback: async () => {
         this.initLeaf();
       },
+    });
+
+    this.app.workspace.onLayoutReady(() => {
+      void this.initLeaf();
     });
 
     document.body.toggleClass(
@@ -270,7 +276,10 @@ export default class ReferenceList extends Plugin {
   async initLeaf() {
     if (this.view) return this.revealLeaf();
 
-    await this.app.workspace.getRightLeaf(false).setViewState({
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (!leaf) return;
+
+    await leaf.setViewState({
       type: viewType,
     });
 
@@ -295,10 +304,14 @@ export default class ReferenceList extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
 
-  async saveSettings(cb?: () => void) {
+  async saveSettings(cb?: () => void | Promise<void>) {
     document.body.toggleClass(
       'pwc-tooltips',
       !!this.settings.showCitekeyTooltips
+    );
+    this.view?.contentEl.toggleClass(
+      'collapsed-links',
+      !!this.settings.hideLinks
     );
 
     // Refresh the reference list when settings change
@@ -307,24 +320,39 @@ export default class ReferenceList extends Plugin {
   }
 
   emitSettingsUpdate = debounce(
-    (cb?: () => void) => {
-      if (this.initPromise.settled) {
-        this.view?.contentEl.toggleClass(
-          'collapsed-links',
-          !!this.settings.hideLinks
-        );
+    (cb?: () => void | Promise<void>) => {
+      if (!this.bibManager) return;
 
-        if (cb) cb();
+      this.view?.contentEl.toggleClass(
+        'collapsed-links',
+        !!this.settings.hideLinks
+      );
 
-        this.processReferences();
+      if (!this.initPromise.settled) {
+        void this.initPromise.promise.then(async () => {
+          if (this.bibManager) {
+            await cb?.();
+            this.processReferences();
+          }
+        }).catch((error) => {
+          console.error('Unable to reload reference list:', error);
+        });
+        return;
       }
+
+      void Promise.resolve(cb?.()).then(() => {
+        if (this.bibManager) this.processReferences();
+      }).catch((error) => {
+        console.error('Unable to reload reference list:', error);
+      });
     },
-    5000,
+    100,
     true
   );
 
   processReferences = async () => {
     const { settings, view } = this;
+    if (!this.bibManager) return;
     if (!settings.pathToBibliography && !settings.pullFromZotero) {
       return view?.setMessage(
         t(

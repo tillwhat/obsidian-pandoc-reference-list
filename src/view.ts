@@ -58,7 +58,11 @@ export class ReferenceListView extends ItemView {
               },
               (btn) => {
                 setIcon(btn, 'lucide-copy');
-                btn.onClickEvent(() => copyElToClipboard(bib));
+                btn.onClickEvent(() => {
+                  void copyElToClipboard(bib).catch((error) => {
+                    console.error('Unable to copy bibliography:', error);
+                  });
+                });
               }
             );
           });

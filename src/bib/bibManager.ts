@@ -428,8 +428,11 @@ export class BibManager {
 
   async loadAndRefreshGlobalZBib() {
     await this.loadGlobalZBib(true);
+    if (!this.plugin) return;
     void this.refreshGlobalZBib().catch((error) => {
-      console.error('Error refreshing bibliography from Zotero', error);
+      if (this.plugin) {
+        console.error('Error refreshing bibliography from Zotero', error);
+      }
     });
   }
 
@@ -456,6 +459,7 @@ export class BibManager {
       }
     }
 
+    if (!this.plugin) return;
     this.plugin.saveSettings();
 
     this.bibCache = new Map();
@@ -494,6 +498,7 @@ export class BibManager {
   }
 
   async refreshGlobalZBib() {
+    if (!this.plugin) return;
     const { settings, cacheDir } = this.plugin;
     if (!settings.zoteroGroups?.length) return;
 
@@ -525,6 +530,7 @@ export class BibManager {
       }
     }
 
+    if (!this.plugin) return;
     this.plugin.saveSettings();
     this.updateFuse(modifiedEntries);
     this.fileCache.clear();
@@ -664,7 +670,9 @@ export class BibManager {
   }
 
   async getReferenceList(file: TFile, content: string) {
+    if (!this.plugin) return null;
     await this.plugin.initPromise.promise;
+    if (!this.plugin) return null;
     await this.initPromise.promise;
 
     const segs = getCitationSegments(
@@ -866,7 +874,17 @@ export class BibManager {
     parsed?.findAll('.csl-entry').forEach((e) => {
       if (!inTooltip) {
         e.setAttribute('aria-label', t('Click to copy'));
-        e.onClickEvent(() => copyElToClipboard(e));
+        e.onClickEvent((event) => {
+          if (
+            event.target instanceof HTMLElement &&
+            event.target.closest('a, button, .clickable-icon')
+          ) {
+            return;
+          }
+          void copyElToClipboard(e).catch((error) => {
+            console.error('Unable to copy bibliography entry:', error);
+          });
+        });
       }
 
       const div = createDiv({ cls: 'csl-entry-wrapper' });

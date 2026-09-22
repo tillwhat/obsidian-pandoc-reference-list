@@ -189,6 +189,7 @@ body {
 .pwc-tooltip.collapsed-links a,
 .pwc-reference-list.collapsed-links a {
   font-size: 0;
+  text-decoration: none;
 }
 
 .pwc-tooltip.collapsed-links a::after,
