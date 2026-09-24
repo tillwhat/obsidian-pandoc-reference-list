@@ -22,7 +22,7 @@ export class TooltipManager {
     if (!el.dataset.source) return;
 
     const file = app.vault.getAbstractFileByPath(el.dataset.source);
-    if (!file && !(file instanceof TFile)) {
+    if (!file || !(file instanceof TFile)) {
       return;
     }
 

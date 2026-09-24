@@ -25,6 +25,7 @@ import {
 } from './parser/parser';
 import { BibManager, FileCache } from './bib/bibManager';
 import { TooltipManager } from './tooltip';
+import { parseSanitizedHtmlFragment } from './security/sanitizeHtml';
 
 const ignoreListRegEx = /code|math|templater|hashtag/;
 
@@ -116,11 +117,7 @@ class CiteWidget extends WidgetType {
         }
 
         if (/</.test(this.cite.val)) {
-          const parsed = new DOMParser().parseFromString(
-            this.cite.val,
-            'text/html'
-          );
-          span.append(...Array.from(parsed.body.childNodes));
+          span.append(parseSanitizedHtmlFragment(this.cite.val));
         } else {
           span.setText(this.cite.val);
         }

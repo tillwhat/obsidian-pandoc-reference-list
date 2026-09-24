@@ -1,4 +1,5 @@
 import { Citation, CitationGroup, RenderedCitation } from './parser';
+import { stripNoPrintedFormToken } from '../security/sanitizeHtml';
 
 export type CiteMode = 'suppress-author' | 'composite' | 'author-only';
 export interface CiteProps {
@@ -125,14 +126,8 @@ export function getCiteprocCites(
   return { output, idToGroup };
 }
 
-function decodeHtml(str: string) {
-  const txt = document.createElement('textarea');
-  txt.innerHTML = str;
-  return txt.value;
-}
-
 function sanitize(val: string) {
-  return decodeHtml(val.replace(/\[NO_PRINTED_FORM\] */g, ''));
+  return stripNoPrintedFormToken(val);
 }
 
 export function cite(engine: any, group: CitationGroup[]) {

@@ -11,6 +11,72 @@ const execFileAsync = promisify(execFile);
 
 export const DEFAULT_ZOTERO_PORT = '23119';
 
+function isPrivateIPv4(hostname: string) {
+  const parts = hostname.split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) {
+    return false;
+  }
+
+  const [a, b] = parts;
+  return (
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
+}
+
+function isPrivateIPv6(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return (
+    normalized === '::1' ||
+    normalized === '::' ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    normalized.startsWith('fe8') ||
+    normalized.startsWith('fe9') ||
+    normalized.startsWith('fea') ||
+    normalized.startsWith('feb')
+  );
+}
+
+export function normalizeAndValidateStyleUrl(input: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(input);
+  } catch {
+    throw new Error(`Invalid CSL style URL: '${input}'.`);
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Only HTTPS URLs are allowed for remote CSL styles.');
+  }
+
+  if (parsed.username || parsed.password) {
+    throw new Error(
+      'CSL style URLs must not include username or password credentials.'
+    );
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local')
+  ) {
+    throw new Error('Local hostnames are not allowed for remote CSL styles.');
+  }
+
+  if (isPrivateIPv4(hostname) || isPrivateIPv6(hostname)) {
+    throw new Error(
+      'Private or loopback IP addresses are not allowed for remote CSL styles.'
+    );
+  }
+
+  return parsed;
+}
+
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -205,28 +271,43 @@ export async function getCSLStyle(
     return styleData;
   }
 
+  const safeUrl = normalizeAndValidateStyleUrl(url).toString();
+
   if (styleCache.has(url)) {
     return styleCache.get(url);
   }
 
-  const fileFromURL = url.split('/').pop();
+  if (styleCache.has(safeUrl)) {
+    return styleCache.get(safeUrl);
+  }
+
+  const fileFromURL = path.basename(new URL(safeUrl).pathname);
+  if (!fileFromURL) {
+    throw new Error(`Error: retrieving citation style; Invalid URL '${url}'.`);
+  }
   const outpath = path.join(cacheDir, fileFromURL);
 
   ensureDir(cacheDir);
   if (fs.existsSync(outpath)) {
     const styleData = fs.readFileSync(outpath).toString();
-    styleCache.set(url, styleData);
+    styleCache.set(safeUrl, styleData);
+    if (url !== safeUrl) {
+      styleCache.set(url, styleData);
+    }
     return styleData;
   }
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(safeUrl);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     const styleData = await response.text();
     fs.writeFileSync(outpath, styleData);
-    styleCache.set(url, styleData);
+    styleCache.set(safeUrl, styleData);
+    if (url !== safeUrl) {
+      styleCache.set(url, styleData);
+    }
     return styleData;
   } catch (e) {
     console.error('Error downloading CSL style:', e);

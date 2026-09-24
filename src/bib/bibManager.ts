@@ -21,6 +21,10 @@ import {
   getCitationSegments,
   getCitations,
 } from 'src/parser/parser';
+import {
+  parseSanitizedHtmlFragment,
+  sanitizeElementTree,
+} from 'src/security/sanitizeHtml';
 import { LRUCache } from 'lru-cache';
 import { Keymap, MarkdownView, TFile, setIcon } from 'obsidian';
 import { cite } from 'src/parser/citeproc';
@@ -690,8 +694,7 @@ export class BibManager {
       return null;
     }
 
-    const doc = new DOMParser().parseFromString(cite.note, 'text/html');
-    return Array.from(doc.body.childNodes);
+    return Array.from(parseSanitizedHtmlFragment(cite.note).childNodes);
   }
 
   getBibForCiteKey(file: TFile, key: string) {
@@ -709,8 +712,9 @@ export class BibManager {
       return null;
     }
 
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const el = doc.body.firstElementChild as HTMLElement;
+    const wrapper = createDiv();
+    wrapper.append(parseSanitizedHtmlFragment(html));
+    const el = wrapper.firstElementChild as HTMLElement;
     if (el) {
       el.dataset.citekey = key;
       return this.prepBibHTML(el, file, true);
@@ -858,9 +862,10 @@ export class BibManager {
     for (const entry of entries) htmlStr.push(entry);
 
     htmlStr.push(metadata.bibend);
+    const parsedRoot = createDiv();
+    parsedRoot.append(parseSanitizedHtmlFragment(htmlStr.join('')));
     let parsed = entries.length
-      ? (new DOMParser().parseFromString(htmlStr.join(''), 'text/html').body
-          .firstElementChild as HTMLElement)
+      ? (parsedRoot.firstElementChild as HTMLElement)
       : null;
 
     if (parsed) {
@@ -909,6 +914,8 @@ export class BibManager {
   }
 
   prepBibHTML(parsed: HTMLElement, file: TFile, inTooltip?: boolean) {
+    sanitizeElementTree(parsed);
+
     if (this.plugin.settings.hideLinks) {
       parsed?.findAll('a').forEach((l) => {
         l.setAttribute('aria-label', l.innerText);
