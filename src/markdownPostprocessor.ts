@@ -20,7 +20,6 @@ function citationSignature(segs: Segment[]) {
   return signature;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function processCiteKeys(plugin: ReferenceList) {
   return (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
     const toRemove: Node[] = [];
