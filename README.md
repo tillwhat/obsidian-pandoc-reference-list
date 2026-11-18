@@ -66,7 +66,11 @@ It creates commit and tag `0.2.0`, pushes the branch, and pushes all tags.
 Pushing the tag triggers `.github/workflows/release.yml`. The workflow runs
 `npm ci`, creates `main.js`, and publishes a GitHub release containing
 `main.js`, `manifest.json`, and `styles.css`. The release notes come from
-`release-notes.md`.
+`release-notes.md`. The workflow grants `GITHUB_TOKEN` write access to
+repository contents so it can create the release. If GitHub Actions is set to
+"Read repository contents and packages" in repository settings, change it to
+"Read and write permissions" or retain an explicit contents permission in the
+workflow.
 
 You can also publish manually if that script is unsuitable:
 
