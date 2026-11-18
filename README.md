@@ -1,6 +1,6 @@
-## Obsidian Pandoc Reference List
+# tillwhat's Obsidian Pandoc Reference List
 
-Displays a formatted reference in the sidebar for each pandoc citekey present in the current document.
+This fork displays a formatted reference in the sidebar for each pandoc citekey present in the current document.
 
 Setup:
 - Ensure [Pandoc](https://pandoc.org/) is installed. **This plugin requires at least version 2.11**.
@@ -25,4 +25,54 @@ npm run check-types
 npm run lint
 npm test
 npm run build
+```
+
+## Publishing a new version
+
+Keep the plugin ID and name stable once users have installed the fork. Do not
+change `manifest.json.id` for a normal release.
+
+Before publishing, update the version consistently:
+
+1. Choose the next semantic version, such as `0.2.0`.
+2. Run `npm version patch --no-git-tag-version` (use `minor` or `major` instead
+   when appropriate). This updates `package.json` and `package-lock.json`
+   without creating a Git tag.
+3. Run `npm run bump`. This updates `manifest.json` and `versions.json` using
+   the minimum Obsidian version from `manifest.json`, stages them together with
+   `package.json`, and generates `release-notes.md` from commits since the
+   previous Git tag.
+4. Stage the lockfile and review everything before publishing:
+
+```sh
+git add package-lock.json
+git diff --staged
+npm test -- --runInBand
+npm run build
+```
+
+Use the same version in `package.json`, `manifest.json`, `package-lock.json`,
+and the Git tag. Do not prefix the tag with `v` unless the Obsidian community
+listing and release configuration are also changed consistently.
+
+The repository provides `npm run release` for the final commit/tag/push step.
+After reviewing the staged files, run:
+
+```sh
+npm run release
+```
+
+It creates commit and tag `0.2.0`, pushes the branch, and pushes all tags.
+Pushing the tag triggers `.github/workflows/release.yml`. The workflow runs
+`npm ci`, creates `main.js`, and publishes a GitHub release containing
+`main.js`, `manifest.json`, and `styles.css`. The release notes come from
+`release-notes.md`.
+
+You can also publish manually if that script is unsuitable:
+
+```sh
+git commit -m "0.2.0"
+git tag 0.2.0
+git push origin main
+git push origin 0.2.0
 ```
