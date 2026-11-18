@@ -23,6 +23,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+
       - name: Check types
         run: npm run check-types
 
@@ -30,4 +35,6 @@ jobs:
         run: npm run lint
 
       - name: Test
+        env:
+          PANDOC_PATH: /usr/bin/pandoc
         run: npm test -- --runInBand

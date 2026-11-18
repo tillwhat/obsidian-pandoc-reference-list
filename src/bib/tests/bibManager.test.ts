@@ -22,12 +22,18 @@ import testYAMLCSL from './test.yaml.json';
 // import library from './My Library.json';
 import { existsSync, rmSync } from 'node:fs';
 
+const pandocPath =
+  process.env.PANDOC_PATH ||
+  (existsSync('/usr/bin/pandoc')
+    ? '/usr/bin/pandoc'
+    : '/opt/homebrew/bin/pandoc');
+
 describe('bibToCSL()', () => {
   it('returns json from json', async () => {
     expect(
       await bibToCSL(
         path.join(__dirname, 'test.json'),
-        '/opt/homebrew/bin/pandoc'
+        pandocPath
       )
     ).toEqual(testCSL);
   });
@@ -36,7 +42,7 @@ describe('bibToCSL()', () => {
     expect(
       await bibToCSL(
         path.join(__dirname, 'test.bib'),
-        '/opt/homebrew/bin/pandoc'
+        pandocPath
       )
     ).toEqual(testBIBCSL);
   });
@@ -45,7 +51,7 @@ describe('bibToCSL()', () => {
     expect(
       await bibToCSL(
         path.join(__dirname, 'test2.bib'),
-        '/opt/homebrew/bin/pandoc'
+        pandocPath
       )
     ).toEqual(testBIB2CSL);
   });
@@ -54,7 +60,7 @@ describe('bibToCSL()', () => {
     expect(
       await bibToCSL(
         path.join(__dirname, 'test.yaml'),
-        '/opt/homebrew/bin/pandoc'
+        pandocPath
       )
     ).toEqual(testYAMLCSL);
   });
