@@ -19,11 +19,20 @@ describe('mobile bibliography cache', () => {
     ).toThrow('invalid or unsupported');
   });
 
-  it('rejects entries without citekeys and titles', () => {
-    expect(() =>
+  it('accepts entries without titles', () => {
+    expect(
       validateMobileCache({
         ...validCache,
         bibliography: [{ id: 'key' }],
+      }).bibliography
+    ).toEqual([{ id: 'key' }]);
+  });
+
+  it('rejects entries without citekeys', () => {
+    expect(() =>
+      validateMobileCache({
+        ...validCache,
+        bibliography: [{ title: 'Title' }],
       })
     ).toThrow('invalid or unsupported');
   });

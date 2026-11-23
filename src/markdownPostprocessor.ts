@@ -93,11 +93,7 @@ export function processCiteKeys(plugin: ReferenceList) {
           });
 
           if (plugin.settings.renderCitationsReadingMode) {
-            if (/</.test(rendered.val)) {
-              span.append(parseSanitizedHtmlFragment(rendered.val));
-            } else {
-              span.setText(rendered.val);
-            }
+            span.append(parseSanitizedHtmlFragment(rendered.val));
           } else {
             span.append(node.cloneNode());
           }

@@ -1,6 +1,6 @@
 export interface PartialCSLEntry {
   id: string;
-  title: string;
+  title?: string;
   groupID?: number;
 }
 

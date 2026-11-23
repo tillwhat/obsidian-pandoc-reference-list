@@ -26,7 +26,7 @@ function isEntry(value: unknown): value is PartialCSLEntry {
   return (
     isRecord(value) &&
     typeof value.id === 'string' &&
-    typeof value.title === 'string'
+    (value.title === undefined || typeof value.title === 'string')
   );
 }
 

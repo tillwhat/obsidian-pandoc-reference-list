@@ -1,7 +1,7 @@
 {
 	"id": "obsidian-tillwhat-pandoc-reference-list",
 	"name": "tillwhat Pandoc Reference List",
-	"version": "0.1.2",
+	"version": "0.2.0",
 	"minAppVersion": "1.13.0",
 	"description": "Displays a formatted reference in the sidebar for each pandoc citekey present in the current document.",
 	"author": "tillwhat",

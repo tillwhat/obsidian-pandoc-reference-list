@@ -40,6 +40,14 @@ describe('sanitizeHtml', () => {
     );
   });
 
+  it('decodes HTML entities in rendered citation text', () => {
+    const fragment = parseSanitizedHtmlFragment(
+      'Lazarus &#38; Folkman (1984)'
+    );
+
+    expect(fragment.textContent).toBe('Lazarus & Folkman (1984)');
+  });
+
   it('strips [NO_PRINTED_FORM] marker only', () => {
     expect(stripNoPrintedFormToken('a [NO_PRINTED_FORM] b')).toBe('a b');
   });

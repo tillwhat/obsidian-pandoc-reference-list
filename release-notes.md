@@ -1,2 +1,1 @@
-121df83 fix
-230e723 update workflows
+6ea774e runs checks action only on main branch

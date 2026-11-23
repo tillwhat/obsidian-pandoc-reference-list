@@ -116,11 +116,7 @@ class CiteWidget extends WidgetType {
           });
         }
 
-        if (/</.test(this.cite.val)) {
-          span.append(parseSanitizedHtmlFragment(this.cite.val));
-        } else {
-          span.setText(this.cite.val);
-        }
+        span.append(parseSanitizedHtmlFragment(this.cite.val));
       }
     );
   }
