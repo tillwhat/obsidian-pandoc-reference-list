@@ -1,6 +1,7 @@
 import { CSLList, PartialCSLEntry } from './bib/types';
 
-export const MOBILE_CACHE_PATH = '.pandoc/mobile-cache.json';
+export const MOBILE_CACHE_FOLDER = '_tillwhat-pandoc-reference-list';
+export const MOBILE_CACHE_PATH = `${MOBILE_CACHE_FOLDER}/mobile-cache.json`;
 const MOBILE_CACHE_VERSION = 1;
 
 export interface MobileCache {

@@ -52,7 +52,9 @@ export default class ReferenceList extends Plugin {
       (leaf: WorkspaceLeaf) => new ReferenceListView(leaf, this)
     );
 
-    this.cacheDir = Platform.isMobile ? '.pandoc' : `${getVaultRoot()}/.pandoc`;
+    this.cacheDir = Platform.isMobile
+      ? '_tillwhat-pandoc-reference-list'
+      : `${getVaultRoot()}/_tillwhat-pandoc-reference-list`;
     this.emitter = new Events();
     this.bibManager = new BibManager(this);
     this.initPromise.promise

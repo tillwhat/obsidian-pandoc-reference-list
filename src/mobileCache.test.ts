@@ -1,4 +1,8 @@
-import { validateMobileCache } from './mobileCache';
+import {
+  MOBILE_CACHE_FOLDER,
+  MOBILE_CACHE_PATH,
+  validateMobileCache,
+} from './mobileCache';
 
 const validCache = {
   version: 1,
@@ -9,6 +13,13 @@ const validCache = {
 };
 
 describe('mobile bibliography cache', () => {
+  it('uses a vault-visible cache folder', () => {
+    expect(MOBILE_CACHE_FOLDER).toBe('_tillwhat-pandoc-reference-list');
+    expect(MOBILE_CACHE_PATH).toBe(
+      '_tillwhat-pandoc-reference-list/mobile-cache.json'
+    );
+  });
+
   it('accepts a versioned CSL cache', () => {
     expect(validateMobileCache(validCache)).toEqual(validCache);
   });

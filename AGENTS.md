@@ -78,7 +78,7 @@ do not commit them. The tag-triggered release workflow builds and publishes
   both `plugin.initPromise` and `bibManager.initPromise`.
 - `src/bib/bibManager.ts` converts BibTeX/YAML/etc. through Pandoc `csljson`
   while accepting CSL JSON directly; loads and caches CSL styles and locale XML
-  in the vault's `.pandoc` directory; builds citeproc engines; handles global
+  in the vault's `_tillwhat-pandoc-reference-list` directory; builds citeproc engines; handles global
   settings and per-file frontmatter overrides; maintains the global
   bibliography and LRU per-file cache; watches bibliography files; and
   integrates with the local Zotero API. Bibliography, style, and locale
@@ -157,8 +157,44 @@ built-ins, and CodeMirror packages.
   80-column print width. ESLint applies to `src`.
 - Keep generated locale/style downloads, test-created caches, coverage, and
   build artifacts out of commits.
-- Release metadata is coordinated across `package.json`, `manifest.json`, and
-  `versions.json`; use the existing `version-bump.mjs` flow.
+- Release metadata is coordinated across `package.json`, `package-lock.json`,
+  `manifest.json`, and `versions.json`; use the existing scripts below.
+
+## Releasing
+
+Do not change `manifest.json.id` for a normal release. Keep the plugin ID and
+name stable once users have installed the plugin.
+
+1. On `main`, choose a semantic version and update it with
+   `npm version patch --no-git-tag-version` or `minor`/`major` as appropriate.
+   This updates `package.json` and `package-lock.json` without creating a tag.
+2. Run `npm run bump`. The `version-bump.mjs` script copies the target package
+   version to `manifest.json` and records its `minAppVersion` in
+   `versions.json`. It stages `package.json`, `manifest.json`, and
+   `versions.json`, then creates `release-notes.md` from commits since the
+   latest tag.
+3. Stage `package-lock.json` and all intended source changes:
+   `git add package-lock.json` plus the relevant files.
+4. Verify `package.json`, `package-lock.json`, `manifest.json`, `versions.json`,
+   and `release-notes.md` all describe the same release. Run
+   `npm run check-types`, `npm run lint`, `npm test -- --runInBand`, and
+   `npm run build`. Review `git diff --staged` before publishing.
+5. Run `npm run release`. It commits with the package version, creates a tag,
+   pushes `main`, and pushes tags. Alternatively, commit and push `main`, then
+   create the same version tag manually. Never add a `v` prefix unless the
+   plugin metadata and release process are changed consistently.
+
+Tag pushes trigger `.github/workflows/release.yml`. The workflow must run from a
+workflow file that exists on the tagged commit and must retain
+`permissions: contents: write` for `GITHUB_TOKEN`. It uses `.nvmrc` with
+`actions/checkout@v7` and `actions/setup-node@v7`, runs `npm ci` and
+`npm run build`, then creates a GitHub release from `release-notes.md` with
+`main.js`, `manifest.json`, and `styles.css`.
+
+Tagging an old commit reruns the workflow definition from that commit, not
+`main`. A failed old-tag workflow cannot be fixed by changing `main`; publish a
+new version or intentionally move/tag a corrected commit. Do not rewrite or
+delete published tags to repair a release unless explicitly requested.
 
 For each change:
 

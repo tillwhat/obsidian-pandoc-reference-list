@@ -1,1 +1,3 @@
-6ea774e runs checks action only on main branch
+- Move the mobile bibliography cache to the synced `_tillwhat-pandoc-reference-list` folder.
+- Fix citation HTML entities in Live Preview and Reading Mode.
+- Improve mobile cache validation for entries without titles.
