@@ -9,7 +9,6 @@ import {
   getCSLLocale,
   getCSLStyle,
   getZBib,
-  refreshZBib,
 } from './helpers';
 import {
   PromiseCapability,
@@ -556,36 +555,59 @@ export class BibManager {
     if (!settings.zoteroGroups?.length) return;
 
     const bib: PartialCSLEntry[] = [];
-    const modifiedEntries: Map<string, PartialCSLEntry> = new Map();
-
+    let successfulRefresh = false;
     for (const group of settings.zoteroGroups) {
       try {
-        const res = await refreshZBib(
+        const list = await getZBib(
           settings.zoteroPort,
           cacheDir,
           group.id,
-          group.lastUpdate
+          false
         );
-        if (!res) continue;
-        if (res.list?.length) {
-          bib.push(...res.list);
+        if (list) {
+          successfulRefresh = true;
+          bib.push(...list);
           group.lastUpdate = Date.now();
-        }
-
-        for (const [k, v] of res.modified.entries()) {
-          modifiedEntries.set(k, v);
-          this.bibCache.set(k, v);
-          this.cacheZoteroLink(v);
         }
       } catch (e) {
         console.error('Error fetching bibliography from Zotero', e);
-        continue;
       }
     }
 
-    if (!this.plugin) return;
+    if (!this.plugin || !successfulRefresh) return;
+
+    this.bibCache = new Map();
+    this.zCitekeyToLinks.clear();
+    this.zCitekeyToPDFLinks.clear();
+    for (const entry of bib) {
+      this.bibCache.set(entry.id, entry);
+      this.cacheZoteroLink(entry);
+    }
+
+    this.setFuse(bib);
+
+    const style =
+      settings.cslStylePath ||
+      settings.cslStyleURL ||
+      'https://raw.githubusercontent.com/citation-style-language/styles/master/apa.csl';
+    const lang = settings.cslLang || 'en-US';
+
+    if (this.styleCache.has(style) && this.langCache.has(lang)) {
+      try {
+        this.engine = this.buildEngine(
+          lang,
+          this.langCache,
+          style,
+          this.styleCache,
+          this.bibCache
+        );
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    await this.writeMobileCache();
     this.plugin.saveSettings();
-    this.updateFuse(modifiedEntries);
     this.fileCache.clear();
     this.plugin.processReferences();
   }

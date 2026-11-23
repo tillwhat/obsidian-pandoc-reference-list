@@ -1,3 +1,4 @@
-- Move the mobile bibliography cache to the synced `_tillwhat-pandoc-reference-list` folder.
-- Fix citation HTML entities in Live Preview and Reading Mode.
-- Improve mobile cache validation for entries without titles.
+- Refresh Zotero bibliographies automatically every minute.
+- Replace changed entries and add new Zotero items without stale cache state.
+- Rebuild citeproc and rewrite the synced mobile cache after refresh.
+- Preserve the existing bibliography if Zotero is temporarily unavailable.

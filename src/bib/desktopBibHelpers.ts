@@ -653,6 +653,34 @@ function toCSLEntry(
   return entry;
 }
 
+export function mergeZoteroModifiedItems(
+  cached: CSLList,
+  modified: Map<string, PartialCSLEntry>
+): CSLList {
+  const next = cached.map((item) => {
+    const replacement = modified.get(item.id);
+    if (!replacement) return item;
+
+    const oldAttachment = (item as ZoteroCSLEntry).zoteroAttachmentKey;
+    if (
+      typeof oldAttachment === 'string' &&
+      typeof (replacement as ZoteroCSLEntry).zoteroAttachmentKey !== 'string'
+    ) {
+      (replacement as ZoteroCSLEntry).zoteroAttachmentKey = oldAttachment;
+      (replacement as ZoteroCSLEntry).zoteroAttachmentsLoaded = true;
+    }
+    return replacement;
+  });
+
+  for (const [id, item] of modified) {
+    if (!cached.some((entry) => entry.id === id)) {
+      next.push(item);
+    }
+  }
+
+  return next;
+}
+
 export async function refreshZBib(
   port: string = DEFAULT_ZOTERO_PORT,
   cacheDir: string,
@@ -672,40 +700,17 @@ export async function refreshZBib(
   }
 
   const modified: Map<string, PartialCSLEntry> = new Map();
-  const newKeys: Set<string> = new Set();
 
   for (const mod of mList) {
     mod.id = mod.id || (mod as any).citationKey;
     if (!mod.id) continue;
     modified.set(mod.id, mod);
-    newKeys.add(mod.id);
   }
 
-  const list = JSON.parse(fs.readFileSync(cached).toString()) as CSLList;
-
-  for (let i = 0; i < list.length; i++) {
-    const item = list[i];
-    if (modified.has(item.id)) {
-      const replacement = modified.get(item.id);
-      if (replacement) {
-        const oldAttachment = (item as ZoteroCSLEntry).zoteroAttachmentKey;
-        if (
-          typeof oldAttachment === 'string' &&
-          typeof (replacement as ZoteroCSLEntry).zoteroAttachmentKey !==
-            'string'
-        ) {
-          (replacement as ZoteroCSLEntry).zoteroAttachmentKey = oldAttachment;
-          (replacement as ZoteroCSLEntry).zoteroAttachmentsLoaded = true;
-        }
-        newKeys.delete(item.id);
-        list[i] = replacement;
-      }
-    }
-  }
-
-  for (const key of newKeys) {
-    list.push(modified.get(key));
-  }
+  const list = mergeZoteroModifiedItems(
+    JSON.parse(fs.readFileSync(cached).toString()) as CSLList,
+    modified
+  );
 
   fs.writeFileSync(cached, JSON.stringify(list));
 

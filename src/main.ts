@@ -172,6 +172,13 @@ export default class ReferenceList extends Plugin {
       if (!Platform.isMobile) {
         this.initStatusBar();
         this.setStatusBarLoading();
+        this.registerInterval(
+          activeWindow.setInterval(() => {
+            if (this.settings.pullFromZotero) {
+              void this.bibManager.refreshGlobalZBib();
+            }
+          }, 60_000)
+        );
       }
 
       await this.initPromise.promise;

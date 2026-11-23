@@ -1,4 +1,54 @@
-import { normalizeAndValidateStyleUrl } from '../desktopBibHelpers';
+import {
+  mergeZoteroModifiedItems,
+  normalizeAndValidateStyleUrl,
+} from '../desktopBibHelpers';
+
+describe('mergeZoteroModifiedItems', () => {
+  it('replaces changed entries and adds new entries', () => {
+    const changed = {
+      id: 'changed',
+      title: 'New title',
+    };
+    const added = {
+      id: 'added',
+      title: 'Added item',
+    };
+
+    const result = mergeZoteroModifiedItems(
+      [{ id: 'changed', title: 'Old title' }],
+      new Map([
+        ['changed', changed],
+        ['added', added],
+      ])
+    );
+
+    expect(result).toEqual([changed, added]);
+  });
+
+  it('preserves a Zotero PDF attachment key on metadata refresh', () => {
+    const changed = {
+      id: 'changed',
+      title: 'New title',
+    };
+
+    const result = mergeZoteroModifiedItems(
+      [
+        {
+          id: 'changed',
+          title: 'Old title',
+          zoteroAttachmentKey: 'ATTACHMENT',
+        } as any,
+      ],
+      new Map([['changed', changed]])
+    );
+
+    expect(result[0]).toMatchObject({
+      id: 'changed',
+      title: 'New title',
+      zoteroAttachmentKey: 'ATTACHMENT',
+    });
+  });
+});
 
 describe('normalizeAndValidateStyleUrl', () => {
   it('accepts HTTPS style URLs', () => {
